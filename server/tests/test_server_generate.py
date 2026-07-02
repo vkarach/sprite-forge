@@ -74,6 +74,9 @@ def test_generate_returns_progress_then_result(server_thread):
     assert msgs[-1]["type"] == "result"
     assert len(msgs[-1]["images"]) == 2
     assert any(m["type"] == "progress" for m in msgs)
+    values = [m["value"] for m in msgs if m["type"] == "progress"]
+    assert any(v > 0.95 for v in values)   # per-variant postprocess ticks
+    assert values[-1] == 1.0
 
 
 def test_edit_roundtrip(server_thread):

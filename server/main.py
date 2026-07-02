@@ -117,6 +117,7 @@ def _run(req, on_progress, on_stage):
         if req.symmetry:
             small = mirror_symmetry(small)
         out.append(small)
+        on_progress(0.95 + 0.05 * len(out) / len(raw))
     _save_debug(req, raw, out)
     return out
 
@@ -202,6 +203,8 @@ async def serve(host="127.0.0.1", port=8765, stop=None, on_ready=None):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    # The panel pings every 10s; websockets logs every open/close at INFO.
+    logging.getLogger("websockets").setLevel(logging.WARNING)
     try:
         asyncio.run(serve())
     except KeyboardInterrupt:
