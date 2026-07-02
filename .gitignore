@@ -1,0 +1,13 @@
+# Local-only: design docs, sample sprites, agent scratch
+docs/
+samples/
+.superpowers/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Models and generation output (large binaries)
+models/
+output/
