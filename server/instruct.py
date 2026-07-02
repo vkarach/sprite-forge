@@ -5,7 +5,8 @@ from server.pipeline import upscale_for_model
 
 MODEL_ID = "black-forest-labs/FLUX.2-klein-4B"
 STYLE_SUFFIX = ". Keep the same pixel art style, colors and character design."
-STEPS = 4          # Klein is step-distilled; 4 steps is the documented default
+STEPS = 8          # Klein is step-distilled (4 = documented default); 8 costs
+                   # 2x time but visibly steadies small features like eyes
 GUIDANCE = 1.0
 # Klein 4B already needs ~13 GB; a batched 1024px run overflows 16 GB and
 # WDDM starts paging VRAM through system RAM (observed: 10x+ slowdown).
@@ -28,7 +29,11 @@ class InstructPipeline:
         log.info("loading %s (first run downloads ~8 GB)...", MODEL_ID)
         self._pipe = Flux2KleinPipeline.from_pretrained(
             MODEL_ID, torch_dtype=torch.bfloat16,
-            cache_dir=self.models_dir).to("cuda")
+            cache_dir=self.models_dir)
+        # Klein + its text encoder nearly fill 16 GB and trigger WDDM paging
+        # when resident all at once; sequential offload keeps only the active
+        # component on the GPU and is faster in practice on this card.
+        self._pipe.enable_model_cpu_offload()
         log.info("instruct pipeline ready")
 
     def _cb(self, on_progress, done, total):
