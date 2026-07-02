@@ -25,24 +25,10 @@ function init(plugin)
   local dialogs = chunk(pluginDir)
 
   plugin:newCommand{
-    id = "SpriteForgeGenerate",
-    title = "Generate...",
+    id = "SpriteForgeOpen",
+    title = "Open SpriteForge...",
     group = "spriteforge_menu",
-    onclick = function() dialogs.generate() end,
-  }
-
-  plugin:newCommand{
-    id = "SpriteForgeEdit",
-    title = "Edit with AI...",
-    group = "spriteforge_menu",
-    onclick = function() dialogs.edit() end,
-  }
-
-  plugin:newCommand{
-    id = "SpriteForgeInpaint",
-    title = "Inpaint Selection...",
-    group = "spriteforge_menu",
-    onclick = function() dialogs.inpaint() end,
+    onclick = function() dialogs.open() end,
   }
 end
 

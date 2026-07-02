@@ -21,10 +21,12 @@ First generation downloads ~7 GB of model weights into `models/`.
 
 ## Use
 
-1. Run `start-server.bat` (keep the window open; minimize it).
-2. In Aseprite: **Sprite → SpriteForge** → Generate / Edit with AI /
-   Inpaint Selection. Results appear in a preview grid; click a variant
-   to insert it as a new layer. Your pixels are never modified.
+1. Run `start-server.bat` (keep the window open; minimize it). Stop it
+   with Ctrl+C; cmd may ask "Terminate batch job (Y/N)?" — answer y.
+2. In Aseprite: **Sprite → SpriteForge → Open SpriteForge**. One panel:
+   pick the task (Generate / Edit with AI / Inpaint Selection), type the
+   prompt, press Run. Variants appear in the same panel; click one to
+   insert it as a new layer. Your pixels are never modified.
 
 ## Tuning without Aseprite
 
