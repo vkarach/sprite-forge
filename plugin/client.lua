@@ -37,7 +37,7 @@ function M.request(payload, callbacks)
       elseif mt == WebSocketMessageType.CLOSE and not finished then
         finished = true
         callbacks.onerror(
-          "Server is not responding. Run start-server.bat first.")
+          "Server offline. Run start-server.bat.")
       end
     end,
   }
@@ -50,7 +50,7 @@ function M.request(payload, callbacks)
           finished = true
           ws:close()
           callbacks.onerror(
-            "Server is not responding. Run start-server.bat first.")
+            "Server offline. Run start-server.bat.")
         end
       end,
     }
@@ -77,7 +77,7 @@ function M.ping(onOk, onFail)
         if ok and msg.type == "pong" then onOk() else onFail("bad reply") end
       elseif mt == WebSocketMessageType.CLOSE and not done then
         done = true
-        onFail("Server is not responding. Run start-server.bat first.")
+        onFail("Server offline. Run start-server.bat.")
       end
     end,
   }
@@ -89,7 +89,7 @@ function M.ping(onOk, onFail)
         if not done then
           done = true
           ws:close()
-          onFail("Server is not responding. Run start-server.bat first.")
+          onFail("Server offline. Run start-server.bat.")
         end
       end,
     }

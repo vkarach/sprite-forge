@@ -45,7 +45,7 @@ local function assembleInstruction(viewPreset, subject, extra)
   return text
 end
 
-local STATUS_W, STATUS_H = 380, 58  -- status line + up to 3 checklist rows
+local STATUS_W, STATUS_H = 300, 58  -- status line + up to 3 checklist rows
 
 -- Colors come from the active Aseprite theme so the status area looks like
 -- part of the dialog (no dark box on a light theme).
@@ -286,7 +286,7 @@ function D.open()
       reqs[1] = { spr ~= nil, "A sprite is open" }
       local text = assembleInstruction(d.viewPreset, d.subject, d.instruction)
       if text then
-        if #text > 40 then text = text:sub(1, 40) .. "..." end
+        if #text > 34 then text = text:sub(1, 34) .. "..." end
         reqs[2] = { true, 'Will send: "' .. text .. '"' }
       else
         reqs[2] = { false, "Pick a view preset or type an instruction" }
@@ -318,6 +318,7 @@ function D.open()
   local function applyModeVisibility()
     local m = dlg.data.mode
     local instruct = m == "Rotate / Instruct"
+    dlg:modify{ id = "sizeSep", visible = m == "Generate" }
     dlg:modify{ id = "w", visible = m == "Generate" }
     dlg:modify{ id = "h", visible = m == "Generate" }
     dlg:modify{ id = "strength", visible = m == "Edit with AI" }
@@ -439,12 +440,13 @@ function D.open()
     end,
   }
 
-  dlg:combobox{ id = "mode", label = "Task:", option = last.mode,
+  dlg:separator{ text = "Task" }
+  dlg:combobox{ id = "mode", option = last.mode,
                 options = { "Generate", "Edit with AI", "Inpaint Selection",
                             "Rotate / Instruct" },
                 onchange = applyModeVisibility }
   dlg:entry{ id = "prompt", label = "Prompt:", text = last.prompt,
-             onchange = updateHint,
+             focus = true, onchange = updateHint,
              visible = last.mode ~= "Rotate / Instruct" }
   dlg:combobox{ id = "viewPreset", label = "View:", option = last.view,
                 options = PRESET_ORDER, onchange = updateHint,
@@ -452,23 +454,27 @@ function D.open()
   dlg:entry{ id = "subject", label = "Subject:", text = last.subject,
              onchange = updateHint,
              visible = last.mode == "Rotate / Instruct" }
-  dlg:entry{ id = "instruction", label = "Extra:", text = last.instruction,
-             onchange = updateHint,
+  dlg:entry{ id = "instruction", label = "Extra:",
+             text = last.instruction, onchange = updateHint,
              visible = last.mode == "Rotate / Instruct" }
   dlg:check{ id = "symmetry", text = "Mirror symmetry (front/back views)",
              selected = last.symmetry,
              visible = last.mode == "Rotate / Instruct" }
   local spr = app.sprite
-  dlg:number{ id = "w", label = "Size:",
+  dlg:separator{ id = "sizeSep", text = "Size",
+                 visible = last.mode == "Generate" }
+  dlg:number{ id = "w", label = "Width:", hexpand = false,
               text = tostring(last.w or (spr and spr.width) or 64),
               visible = last.mode == "Generate" }
-  dlg:number{ id = "h",
+  dlg:number{ id = "h", label = "Height:", hexpand = false,
               text = tostring(last.h or (spr and spr.height) or 64),
               visible = last.mode == "Generate" }
+  dlg:separator{ text = "Options" }
   dlg:slider{ id = "strength", label = "Strength %:", min = 20, max = 90,
               value = last.strength, visible = last.mode == "Edit with AI" }
   dlg:slider{ id = "variants", label = "Variants:", min = 1, max = 8,
               value = last.variants }
+  dlg:separator{ text = "Status" }
   dlg:canvas{
     id = "view", width = STATUS_W, height = STATUS_H,
     onpaint = function(ev)
@@ -526,32 +532,44 @@ function D.open()
           gc:fillRect(Rectangle(x, by + 1, seg, bh - 2))
         end
       else
+        -- Checklist drawn as a tree hanging off the status line.
         local textCol = themeColor("text", Color{ r = 40, g = 40, b = 40 })
         local green = Color{ r = 106, g = 160, b = 100 }
-        for i, r in ipairs(requirements()) do
+        local guide = shade(face, 0.70)
+        local reqs = requirements()
+        for i, r in ipairs(reqs) do
           local y = 16 + (i - 1) * 13
+          local cy = y + 4
+          gc.color = guide
+          gc:fillRect(Rectangle(14, cy, 8, 1))          -- branch stub
+          if i < #reqs then
+            gc:fillRect(Rectangle(14, cy, 1, 13))       -- trunk down
+          end
+          if i == 1 then
+            gc:fillRect(Rectangle(14, 14, 1, cy - 14))  -- trunk from title
+          end
           if r[1] then
             gc.color = green
-            gc:fillRect(Rectangle(8, y, 9, 9))
+            gc:fillRect(Rectangle(26, y, 9, 9))
             -- Proper stroked tick; if the path API is missing, the plain
             -- green box alone still reads as "done".
             pcall(function()
               gc.color = Color{ r = 245, g = 245, b = 240 }
               gc.strokeWidth = 2
               gc:beginPath()
-              gc:moveTo(10, y + 5)
-              gc:lineTo(12, y + 7)
-              gc:lineTo(15, y + 2)
+              gc:moveTo(28, y + 5)
+              gc:lineTo(30, y + 7)
+              gc:lineTo(33, y + 2)
               gc:stroke()
             end)
           else
             gc.color = shade(face, 0.60)
-            gc:fillRect(Rectangle(8, y, 9, 9))
+            gc:fillRect(Rectangle(26, y, 9, 9))
             gc.color = shade(face, 0.93)
-            gc:fillRect(Rectangle(9, y + 1, 7, 7))
+            gc:fillRect(Rectangle(27, y + 1, 7, 7))
           end
           gc.color = r[1] and shade(textCol, 0.85) or textCol
-          gc:fillText(r[2], 22, y + 2)
+          gc:fillText(r[2], 40, y + 2)
         end
       end
     end,
