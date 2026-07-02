@@ -35,6 +35,35 @@ def extract_palette(img: Image.Image, max_colors: int = 16) -> list[tuple[int, i
     return [tuple(raw[i * 3: i * 3 + 3]) for i in used]
 
 
+def crop_to_subject(img: Image.Image, margin: float = 0.04) -> Image.Image:
+    """Crop a background-removed image to its opaque bounding box (plus a
+    small margin) so the subject, not the empty canvas, gets the pixels
+    after downscaling."""
+    arr = np.asarray(img.convert("RGBA"))
+    ys, xs = np.nonzero(arr[:, :, 3])
+    if len(xs) == 0:
+        return img.convert("RGBA")
+    pad = int(margin * max(img.width, img.height))
+    x0 = max(int(xs.min()) - pad, 0)
+    x1 = min(int(xs.max()) + 1 + pad, img.width)
+    y0 = max(int(ys.min()) - pad, 0)
+    y1 = min(int(ys.max()) + 1 + pad, img.height)
+    return img.convert("RGBA").crop((x0, y0, x1, y1))
+
+
+def fit_into(img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
+    """Downscale preserving aspect ratio and center on a transparent canvas
+    of target_size (pixel-art letterboxing)."""
+    tw, th = target_size
+    scale = min(tw / img.width, th / img.height)
+    fw = max(1, round(img.width * scale))
+    fh = max(1, round(img.height * scale))
+    small = downscale(img, (fw, fh))
+    canvas = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+    canvas.paste(small, ((tw - fw) // 2, (th - fh) // 2))
+    return canvas
+
+
 def subject_palette(img: Image.Image, max_colors: int = 16) -> list[tuple[int, int, int]]:
     """Median-cut palette from OPAQUE pixels only. On background-removed
     images this spends every palette slot on the subject instead of wasting

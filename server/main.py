@@ -9,8 +9,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import websockets
 
-from server.postprocess import (downscale, snap_to_palette, subject_palette,
-                                sprite_palette, remove_background)
+from server.postprocess import (crop_to_subject, fit_into, snap_to_palette,
+                                subject_palette, sprite_palette,
+                                remove_background)
 from server.protocol import ProtocolError, parse_request, error_msg, progress_msg, result_msg
 
 log = logging.getLogger("spriteforge")
@@ -88,11 +89,19 @@ def _run(req, on_progress):
     out = []
     for img in raw:
         cut = remove_background(img, tolerance=16)
-        small = downscale(cut, req.target_size)
+        if req.mode == "generate":
+            # Crop to the subject so it gets all the target pixels instead
+            # of shrinking together with the empty canvas around it.
+            cut = crop_to_subject(cut)
+        small = fit_into(cut, req.target_size)
         small = snap_to_palette(small, pal or subject_palette(cut, 16))
         out.append(small)
     _save_debug(req, raw, out)
     return out
+
+
+class JobCancelled(Exception):
+    """Client disconnected mid-generation; abort the GPU job."""
 
 
 async def handle_request(ws, req):
@@ -100,6 +109,11 @@ async def handle_request(ws, req):
     pending = []
 
     def on_progress(v):
+        # Called from the GPU worker thread on every diffusion step.  If the
+        # client is gone (Cancel closes the socket), abort the job instead of
+        # burning GPU time on a result nobody will receive.
+        if getattr(ws, "close_code", None) is not None:
+            raise JobCancelled()
         f = asyncio.run_coroutine_threadsafe(
             ws.send(progress_msg(req.id, v)), loop)
         pending.append(f)
@@ -137,9 +151,15 @@ async def _handler(ws):
             continue
         try:
             await handle_request(ws, req)
+        except JobCancelled:
+            log.info("request %s cancelled by client", req.id)
+            break  # socket is already closed; stop serving this connection
         except Exception as e:  # never die silently
             log.exception("request failed")
-            await ws.send(error_msg(req.id, f"{type(e).__name__}: {e}"))
+            try:
+                await ws.send(error_msg(req.id, f"{type(e).__name__}: {e}"))
+            except Exception:
+                log.debug("client gone before error could be delivered")
 
 
 async def serve(host="127.0.0.1", port=8765, stop=None, on_ready=None):

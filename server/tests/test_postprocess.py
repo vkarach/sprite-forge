@@ -1,8 +1,26 @@
 from PIL import Image
 from server.postprocess import (
-    downscale, extract_palette, sprite_palette, snap_to_palette,
-    subject_palette, remove_background,
+    crop_to_subject, downscale, extract_palette, fit_into, sprite_palette,
+    snap_to_palette, subject_palette, remove_background,
 )
+
+
+def test_crop_to_subject_bounds():
+    img = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    for x in range(40, 60):
+        for y in range(20, 80):
+            img.putpixel((x, y), (255, 0, 0, 255))
+    out = crop_to_subject(img, margin=0)
+    assert out.size == (20, 60)
+    assert out.getpixel((0, 0)) == (255, 0, 0, 255)
+
+
+def test_fit_into_letterboxes_preserving_aspect():
+    img = Image.new("RGBA", (10, 20), (0, 255, 0, 255))  # tall subject
+    out = fit_into(img, (16, 16))
+    assert out.size == (16, 16)
+    assert out.getpixel((8, 8))[3] == 255      # subject in the center
+    assert out.getpixel((0, 8))[3] == 0        # transparent letterbox sides
 
 
 def test_downscale_transparent_majority_cell_stays_transparent():
