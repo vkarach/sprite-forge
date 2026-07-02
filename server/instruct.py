@@ -24,16 +24,33 @@ class InstructPipeline:
     def load(self):
         if self._pipe is not None:
             return
+        import gc
         import torch
         from diffusers import Flux2KleinPipeline
         log.info("loading %s (first run downloads ~8 GB)...", MODEL_ID)
-        self._pipe = Flux2KleinPipeline.from_pretrained(
-            MODEL_ID, torch_dtype=torch.bfloat16,
-            cache_dir=self.models_dir)
-        # Klein + its text encoder nearly fill 16 GB and trigger WDDM paging
-        # when resident all at once; sequential offload keeps only the active
-        # component on the GPU and is faster in practice on this card.
-        self._pipe.enable_model_cpu_offload()
+        try:
+            # 8-bit transformer (official BFL weights, quantized on load):
+            # the whole pipeline then fits in VRAM (~11.5 GB), so no CPU
+            # offload - which used to keep ~16 GB of weights in system RAM.
+            from diffusers import PipelineQuantizationConfig
+            quant = PipelineQuantizationConfig(
+                quant_backend="bitsandbytes_8bit",
+                quant_kwargs={"load_in_8bit": True},
+                components_to_quantize=["transformer"],
+            )
+            self._pipe = Flux2KleinPipeline.from_pretrained(
+                MODEL_ID, torch_dtype=torch.bfloat16,
+                cache_dir=self.models_dir,
+                quantization_config=quant).to("cuda")
+        except Exception:
+            log.exception("8-bit load failed; falling back to CPU offload "
+                          "(uses ~16 GB of system RAM)")
+            self._pipe = Flux2KleinPipeline.from_pretrained(
+                MODEL_ID, torch_dtype=torch.bfloat16,
+                cache_dir=self.models_dir)
+            self._pipe.enable_model_cpu_offload()
+        gc.collect()
+        torch.cuda.empty_cache()
         log.info("instruct pipeline ready")
 
     def _cb(self, on_progress, done, total):
