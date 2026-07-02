@@ -172,4 +172,7 @@ async def serve(host="127.0.0.1", port=8765, stop=None, on_ready=None):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(serve())
+    try:
+        asyncio.run(serve())
+    except KeyboardInterrupt:
+        log.info("SpriteForge server stopped. Bye.")
