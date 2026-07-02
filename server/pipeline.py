@@ -40,6 +40,9 @@ class Pipeline:
         self._txt2img.load_lora_weights(LORA_ID, cache_dir=self.models_dir)
         self._img2img = AutoPipelineForImage2Image.from_pipe(self._txt2img)
         self._inpaint = AutoPipelineForInpainting.from_pipe(self._txt2img)
+        # Decode variants one at a time: the batched VAE decode of several
+        # 1024px images spikes VRAM and spills to host RAM on a full 16 GB card.
+        self._txt2img.enable_vae_slicing()
         # Weights now live in VRAM; drop the CPU-side loading leftovers so
         # the server does not sit on gigabytes of host RAM.
         import gc
