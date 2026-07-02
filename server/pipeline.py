@@ -5,8 +5,11 @@ from PIL import Image
 
 MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"
 LORA_ID = "nerijs/pixel-art-xl"
-PROMPT_SUFFIX = ", pixel art"
-NEGATIVE = "blurry, smooth shading, gradient, photo, 3d render"
+VAE_ID = "madebyollin/sdxl-vae-fp16-fix"  # decodes in fp16 without artifacts
+PROMPT_SUFFIX = (", pixel art, flat colors, clean outlines, simple shapes,"
+                 " single centered subject, plain background")
+NEGATIVE = ("blurry, smooth shading, gradient, photo, 3d render, pattern,"
+            " tiling, repeating, noisy, multiple objects, border, frame, text")
 STEPS = 30
 
 log = logging.getLogger("spriteforge.pipeline")
@@ -23,12 +26,15 @@ class Pipeline:
         if self._txt2img is not None:
             return
         import torch
-        from diffusers import (AutoPipelineForText2Image,
+        from diffusers import (AutoencoderKL,
+                               AutoPipelineForText2Image,
                                AutoPipelineForImage2Image,
                                AutoPipelineForInpainting)
         log.info("loading %s (first run downloads ~7 GB)...", MODEL_ID)
+        vae = AutoencoderKL.from_pretrained(
+            VAE_ID, torch_dtype=torch.float16, cache_dir=self.models_dir)
         self._txt2img = AutoPipelineForText2Image.from_pretrained(
-            MODEL_ID, torch_dtype=torch.float16, variant="fp16",
+            MODEL_ID, torch_dtype=torch.float16, variant="fp16", vae=vae,
             cache_dir=self.models_dir).to("cuda")
         self._txt2img.load_lora_weights(LORA_ID, cache_dir=self.models_dir)
         self._img2img = AutoPipelineForImage2Image.from_pipe(self._txt2img)
