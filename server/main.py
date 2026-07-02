@@ -3,6 +3,7 @@ import asyncio
 import functools
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 import websockets
 
@@ -11,6 +12,8 @@ from server.postprocess import (downscale, extract_palette, snap_to_palette,
 from server.protocol import ProtocolError, parse_request, error_msg, progress_msg, result_msg
 
 log = logging.getLogger("spriteforge")
+
+_gpu_executor = ThreadPoolExecutor(max_workers=1)
 
 
 def _default_pipeline_factory():
@@ -67,7 +70,7 @@ async def handle_request(ws, req):
         pending.append(f)
 
     images = await loop.run_in_executor(
-        None, functools.partial(_run, req, on_progress))
+        _gpu_executor, functools.partial(_run, req, on_progress))
 
     # Drain all in-flight progress sends before the result so ordering is
     # guaranteed.  return_exceptions=True ensures a closed socket during a

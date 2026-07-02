@@ -50,8 +50,12 @@ local function insertAsLayer(img, name)
   app.refresh()
 end
 
+local function newId()
+  return tostring(os.time()) .. "-" .. tostring(math.random(10000))
+end
+
 -- Preview grid: variants drawn scaled-up; click inserts as a layer.
-function D._previewGrid(imagesB64)
+function D._previewGrid(imagesB64, payload)
   local imgs = {}
   for n, s in ipairs(imagesB64) do imgs[n] = imageFromB64(s, n) end
   local cols = math.min(#imgs, 2)
@@ -79,6 +83,15 @@ function D._previewGrid(imagesB64)
       end
     end,
   }
+  if payload then
+    dlg:button{ text = "More variants", onclick = function()
+      dlg:close()
+      local p = {}
+      for k, v in pairs(payload) do p[k] = v end
+      p.id = newId()
+      D._runJob(p)
+    end }
+  end
   dlg:button{ text = "Close" }
   dlg:show{ wait = false }
 end
@@ -97,21 +110,17 @@ function D._runJob(payload)
   job = client.request(payload, {
     onprogress = function(v)
       dlg:modify{ id = "status",
-                  text = string.format("Generating... %d%%", v * 100) }
+                  text = string.format("Generating... %d%%", math.floor(v * 100)) }
     end,
     onresult = function(images)
       dlg:close()
-      D._previewGrid(images)
+      D._previewGrid(images, payload)
     end,
     onerror = function(msg)
       dlg:close()
       app.alert("SpriteForge: " .. msg)
     end,
   })
-end
-
-local function newId()
-  return tostring(os.time()) .. "-" .. tostring(math.random(10000))
 end
 
 function D.generate()

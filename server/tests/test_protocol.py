@@ -72,6 +72,16 @@ def test_parse_rejects_non_dict_frame():
         }))
 
 
+def test_parse_rejects_inpaint_without_mask():
+    b64 = image_to_b64(_red_16())
+    with pytest.raises(ProtocolError):
+        parse_request(json.dumps({
+            "id": "x", "mode": "inpaint", "prompt": "p",
+            "target_size": [16, 16],
+            "frames": [{"image": b64, "mask": None}],
+        }))
+
+
 def test_response_builders():
     assert json.loads(progress_msg("r1", 0.5)) == {
         "id": "r1", "type": "progress", "value": 0.5}
