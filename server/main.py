@@ -18,14 +18,24 @@ log = logging.getLogger("spriteforge")
 
 _gpu_executor = ThreadPoolExecutor(max_workers=1)
 DEBUG_DIR = pathlib.Path("output")
+DEBUG_SAVE = True  # tests set this to False so fake runs don't litter output/
+
+
+def _slug(text, max_words=4, max_len=32):
+    words = [w for w in "".join(
+        c if c.isalnum() or c.isspace() else " " for c in text).split()]
+    return "-".join(words[:max_words])[:max_len].rstrip("-") or "no-prompt"
 
 
 def _save_debug(req, raw_images, final_images):
     """Keep every request in its own folder: uncompressed originals, final
     sprites, and the settings that produced them."""
+    if not DEBUG_SAVE:
+        return
     try:
         safe_id = "".join(c if c.isalnum() or c == "-" else "_" for c in req.id)
-        folder = DEBUG_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}_{req.mode}_{safe_id}"
+        folder = DEBUG_DIR / (f"{time.strftime('%Y%m%d-%H%M%S')}_{req.mode}_"
+                              f"{_slug(req.prompt)}_{safe_id}")
         folder.mkdir(parents=True, exist_ok=True)
         for n, img in enumerate(raw_images):
             img.save(folder / f"raw_{n}.png")

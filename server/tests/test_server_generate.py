@@ -30,6 +30,7 @@ class FakePipeline:
 def server_thread(monkeypatch):
     monkeypatch.setattr(srv, "PIPELINE_FACTORY", FakePipeline)
     monkeypatch.setattr(srv, "_pipeline", None)
+    monkeypatch.setattr(srv, "DEBUG_SAVE", False)  # keep output/ real-only
     loop = asyncio.new_event_loop()
     stop = loop.create_future()
     ready = threading.Event()
