@@ -5,8 +5,9 @@ import pytest
 import websockets
 from PIL import Image
 
+import numpy as np
 import server.main as srv
-from server.protocol import image_to_b64
+from server.protocol import image_to_b64, image_from_b64
 
 HOST, PORT = "127.0.0.1", 8798
 
@@ -121,3 +122,40 @@ def test_instruct_roundtrip_with_stage(server_thread):
     assert len(msgs[-1]["images"]) == 1
     stages = [m.get("stage") for m in msgs if m["type"] == "progress"]
     assert any(s and "Loading" in s for s in stages)
+
+
+def test_edit_crops_small_subject_to_fill_frame(server_thread):
+    """Edit must crop to the subject so a small subject on a big canvas fills
+    the target instead of collapsing to a few pixels."""
+    from server import models
+
+    class SmallSubjectPipeline(FakePipeline):
+        def img2img(self, prompt, image, strength=0.6, variants=4,
+                    on_progress=None):
+            canvas = Image.new("RGBA", (1024, 1024), (0, 0, 0, 255))
+            canvas.paste(Image.new("RGBA", (120, 120), (240, 240, 240, 255)),
+                         (452, 800))
+            return [canvas] * variants
+
+    models.register("sdxl", SmallSubjectPipeline)
+    src = Image.new("RGBA", (16, 16), (240, 240, 240, 255))
+
+    async def go():
+        async with websockets.connect(f"ws://{HOST}:{PORT}",
+                                      max_size=64 * 2**20) as ws:
+            await ws.send(json.dumps({
+                "id": "boat", "mode": "edit", "prompt": "make a boat",
+                "target_size": [64, 64], "variants": 1, "strength": 0.9,
+                "frames": [{"image": image_to_b64(src), "mask": None}],
+            }))
+            while True:
+                msg = json.loads(await ws.recv())
+                if msg["type"] in ("result", "error"):
+                    return msg
+
+    msg = asyncio.run(go())
+    assert msg["type"] == "result"
+    final = image_from_b64(msg["images"][0])
+    opaque = int((np.asarray(final)[:, :, 3] > 0).sum())
+    # Cropped fills most of 64x64; uncropped would be under 100 px of 4096.
+    assert opaque > 1500, f"subject collapsed: only {opaque}/4096 opaque px"

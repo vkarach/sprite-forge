@@ -110,7 +110,8 @@ def _run(req, on_progress, on_stage):
     on_stage(f"Post-processing 0/{len(raw)}")
     for img in raw:
         cut = remove_background(img, tolerance=16)
-        if req.mode == "generate":
+        # Not inpaint: cropping would break its mask alignment.
+        if req.mode in ("generate", "edit"):
             cut = crop_to_subject(cut)
         small = fit_into(cut, req.target_size)
         small = snap_to_palette(small, pal or subject_palette(cut, 16))
