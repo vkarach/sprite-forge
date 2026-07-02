@@ -35,6 +35,17 @@ def extract_palette(img: Image.Image, max_colors: int = 16) -> list[tuple[int, i
     return [tuple(raw[i * 3: i * 3 + 3]) for i in used]
 
 
+def mirror_symmetry(img: Image.Image) -> Image.Image:
+    """Mirror the left half onto the right (center column kept for odd
+    widths). For front/back views this guarantees symmetric features -
+    a standard pixel-art technique."""
+    arr = np.asarray(img.convert("RGBA")).copy()
+    h, w = arr.shape[:2]
+    half = w // 2
+    arr[:, w - half:] = arr[:, :half][:, ::-1]
+    return Image.fromarray(arr, "RGBA")
+
+
 def crop_to_subject(img: Image.Image, margin: float = 0.04) -> Image.Image:
     """Crop a background-removed image to its opaque bounding box (plus a
     small margin) so the subject, not the empty canvas, gets the pixels

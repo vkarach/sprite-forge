@@ -10,9 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 import websockets
 
 from server import models
-from server.postprocess import (crop_to_subject, fit_into, snap_to_palette,
-                                subject_palette, sprite_palette,
-                                remove_background)
+from server.postprocess import (crop_to_subject, fit_into, mirror_symmetry,
+                                snap_to_palette, subject_palette,
+                                sprite_palette, remove_background)
 from server.protocol import ProtocolError, parse_request, error_msg, \
     progress_msg, result_msg
 
@@ -116,6 +116,8 @@ def _run(req, on_progress, on_stage):
             cut = crop_to_subject(cut)
         small = fit_into(cut, req.target_size)
         small = snap_to_palette(small, pal or subject_palette(cut, 16))
+        if req.symmetry:
+            small = mirror_symmetry(small)
         out.append(small)
     _save_debug(req, raw, out)
     return out

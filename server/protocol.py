@@ -27,6 +27,7 @@ class Request:
     target_size: tuple[int, int]
     variants: int = 4
     strength: float = 0.6
+    symmetry: bool = False
     frames: list[Frame] = field(default_factory=list)
 
 
@@ -79,6 +80,7 @@ def parse_request(text: str) -> Request:
         id=req_id, mode=mode, prompt=prompt, target_size=target_size,
         variants=int(data.get("variants", 4)),
         strength=float(data.get("strength", 0.6)),
+        symmetry=bool(data.get("symmetry", False)),
         frames=frames,
     )
 
