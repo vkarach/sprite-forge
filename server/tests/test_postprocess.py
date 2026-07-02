@@ -1,7 +1,32 @@
 from PIL import Image
 from server.postprocess import (
-    downscale, extract_palette, sprite_palette, snap_to_palette, remove_background,
+    downscale, extract_palette, sprite_palette, snap_to_palette,
+    subject_palette, remove_background,
 )
+
+
+def test_downscale_transparent_majority_cell_stays_transparent():
+    img = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+    img.putpixel((0, 0), (255, 0, 0, 255))  # 1/16 opaque, below keep=0.3
+    out = downscale(img, (1, 1))
+    assert out.getpixel((0, 0))[3] == 0
+
+
+def test_downscale_keeps_thin_opaque_features():
+    img = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+    for x in range(4):
+        img.putpixel((x, 0), (255, 0, 0, 255))
+        img.putpixel((x, 1), (255, 0, 0, 255))  # 8/16 = 50% opaque
+    out = downscale(img, (1, 1))
+    assert out.getpixel((0, 0)) == (255, 0, 0, 255)
+
+
+def test_subject_palette_ignores_transparent_pixels():
+    img = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+    img.putpixel((0, 0), (200, 10, 10, 255))
+    img.putpixel((1, 0), (10, 200, 10, 255))
+    pal = subject_palette(img, max_colors=4)
+    assert (200, 10, 10) in pal and (10, 200, 10) in pal
 
 
 def test_downscale_uniform_blocks():

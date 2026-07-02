@@ -12,7 +12,7 @@ import sys
 import time
 
 from server.pipeline import Pipeline
-from server.postprocess import downscale, extract_palette, snap_to_palette, \
+from server.postprocess import downscale, subject_palette, snap_to_palette, \
     remove_background
 
 
@@ -58,9 +58,9 @@ def main():
         src_pal = sprite_palette(PILImage.open(args.edit).convert("RGBA"))
     for n, img in enumerate(images):
         img.save(out_dir / f"{stem}_{n}_raw.png")
-        small = downscale(img, (args.size, args.size))
-        small = snap_to_palette(small, src_pal or extract_palette(img, 16))
-        small = remove_background(small)
+        cut = remove_background(img, tolerance=16)
+        small = downscale(cut, (args.size, args.size))
+        small = snap_to_palette(small, src_pal or subject_palette(cut, 16))
         small.save(out_dir / f"{stem}_{n}.png")
     print(f"wrote {len(images) * 2} files to {out_dir}/")
     return 0

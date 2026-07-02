@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import websockets
 
-from server.postprocess import (downscale, extract_palette, snap_to_palette,
+from server.postprocess import (downscale, snap_to_palette, subject_palette,
                                 sprite_palette, remove_background)
 from server.protocol import ProtocolError, parse_request, error_msg, progress_msg, result_msg
 
@@ -19,18 +19,21 @@ _gpu_executor = ThreadPoolExecutor(max_workers=1)
 DEBUG_DIR = pathlib.Path("output")
 
 
-def _save_debug(req, raw_images):
-    """Keep every request's uncompressed originals + settings for debugging."""
+def _save_debug(req, raw_images, final_images):
+    """Keep every request in its own folder: uncompressed originals, final
+    sprites, and the settings that produced them."""
     try:
-        DEBUG_DIR.mkdir(exist_ok=True)
         safe_id = "".join(c if c.isalnum() or c == "-" else "_" for c in req.id)
-        stem = f"{time.strftime('%Y%m%d-%H%M%S')}_{req.mode}_{safe_id}"
+        folder = DEBUG_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}_{req.mode}_{safe_id}"
+        folder.mkdir(parents=True, exist_ok=True)
         for n, img in enumerate(raw_images):
-            img.save(DEBUG_DIR / f"{stem}_{n}_raw.png")
+            img.save(folder / f"raw_{n}.png")
+        for n, img in enumerate(final_images):
+            img.save(folder / f"final_{n}.png")
         meta = {"mode": req.mode, "prompt": req.prompt,
                 "variants": req.variants, "strength": req.strength,
                 "target_size": list(req.target_size)}
-        (DEBUG_DIR / f"{stem}.json").write_text(
+        (folder / "settings.json").write_text(
             json.dumps(meta, indent=2), encoding="utf-8")
     except OSError:
         log.exception("debug save failed")  # never break generation over this
@@ -77,14 +80,18 @@ def _run(req, on_progress):
         palette_src = req.frames[0].image
 
     on_progress(0.95)
-    _save_debug(req, raw)
+    # Order matters: strip the background at full resolution first (high
+    # contrast, thick outlines - flood fill is reliable there), THEN shrink.
+    # Doing it after the palette snap let the flood eat subject pixels that
+    # snapped to near-background colors.
     pal = sprite_palette(palette_src) if palette_src is not None else None
     out = []
     for img in raw:
-        small = downscale(img, req.target_size)
-        small = snap_to_palette(small, pal or extract_palette(img, 16))
-        small = remove_background(small)
+        cut = remove_background(img, tolerance=16)
+        small = downscale(cut, req.target_size)
+        small = snap_to_palette(small, pal or subject_palette(cut, 16))
         out.append(small)
+    _save_debug(req, raw, out)
     return out
 
 

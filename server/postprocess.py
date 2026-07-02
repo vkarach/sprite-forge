@@ -4,9 +4,12 @@ from PIL import Image
 from collections import deque
 
 
-def downscale(img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
-    """Dominant-color downscale. Each output pixel is the most frequent
-    RGBA value inside its source cell (nearest-style cell boundaries)."""
+def downscale(img: Image.Image, target_size: tuple[int, int],
+              keep: float = 0.3) -> Image.Image:
+    """Alpha-aware downscale. A cell stays opaque when at least `keep` of its
+    source pixels are opaque (biased toward keeping thin features like sword
+    guards); its color is the per-channel median of the opaque pixels, which
+    is robust against the pixel-level noise of AI-generated images."""
     tw, th = target_size
     arr = np.asarray(img.convert("RGBA"))
     h, w = arr.shape[:2]
@@ -17,14 +20,31 @@ def downscale(img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
         for i in range(tw):
             cell = arr[ys[j]:max(ys[j + 1], ys[j] + 1),
                        xs[i]:max(xs[i + 1], xs[i] + 1)].reshape(-1, 4)
-            colors, counts = np.unique(cell, axis=0, return_counts=True)
-            out[j, i] = colors[counts.argmax()]
+            opaque = cell[cell[:, 3] > 0]
+            if len(opaque) >= keep * len(cell):
+                out[j, i, :3] = np.median(opaque[:, :3], axis=0)
+                out[j, i, 3] = 255
     return Image.fromarray(out, "RGBA")
 
 
 def extract_palette(img: Image.Image, max_colors: int = 16) -> list[tuple[int, int, int]]:
     """Median-cut palette of an AI-generated image."""
     q = img.convert("RGB").quantize(colors=max_colors)
+    raw = q.getpalette()[: max_colors * 3]
+    used = sorted(set(q.getdata()))
+    return [tuple(raw[i * 3: i * 3 + 3]) for i in used]
+
+
+def subject_palette(img: Image.Image, max_colors: int = 16) -> list[tuple[int, int, int]]:
+    """Median-cut palette from OPAQUE pixels only. On background-removed
+    images this spends every palette slot on the subject instead of wasting
+    most of them on background shades."""
+    arr = np.asarray(img.convert("RGBA"))
+    opaque = arr[arr[:, :, 3] > 0][:, :3]
+    if len(opaque) == 0:
+        return [(0, 0, 0)]
+    strip = Image.fromarray(opaque.reshape(1, -1, 3), "RGB")
+    q = strip.quantize(colors=max_colors)
     raw = q.getpalette()[: max_colors * 3]
     used = sorted(set(q.getdata()))
     return [tuple(raw[i * 3: i * 3 + 3]) for i in used]
@@ -49,6 +69,7 @@ def snap_to_palette(img: Image.Image, palette: list[tuple[int, int, int]]) -> Im
     dists = ((flat[:, None, :3] - pal[None, :, :]) ** 2).sum(axis=2)  # (N, P)
     snapped = pal[dists.argmin(axis=1)]
     out = np.concatenate([snapped, flat[:, 3:4]], axis=1).astype(np.uint8)
+    out[out[:, 3] == 0] = 0  # fully transparent pixels carry no stray color
     return Image.fromarray(out.reshape(h, w, 4), "RGBA")
 
 
