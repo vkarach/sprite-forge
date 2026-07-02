@@ -20,7 +20,16 @@ function init(plugin)
         function(msg) app.alert("SpriteForge: " .. msg) end)
     end,
   }
-  -- Generate / Edit / Inpaint commands are added in Tasks 10-11.
+
+  local chunk = assert(loadfile(app.fs.joinPath(pluginDir, "dialogs.lua")))
+  local dialogs = chunk(pluginDir)
+
+  plugin:newCommand{
+    id = "SpriteForgeGenerate",
+    title = "Generate...",
+    group = "spriteforge_menu",
+    onclick = function() dialogs.generate() end,
+  }
 end
 
 function exit(plugin) end
