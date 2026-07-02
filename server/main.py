@@ -101,13 +101,13 @@ def _run(req, on_progress, on_stage):
                                on_progress=step_progress)
             palette_src = req.frames[0].image
 
-    on_progress(0.95)
     # Order matters: strip the background at full resolution first (high
     # contrast, thick outlines - flood fill is reliable there), THEN shrink.
     # Doing it after the palette snap let the flood eat subject pixels that
     # snapped to near-background colors.
     pal = sprite_palette(palette_src) if palette_src is not None else None
     out = []
+    on_stage(f"Post-processing 0/{len(raw)}")
     for img in raw:
         cut = remove_background(img, tolerance=16)
         if req.mode == "generate":
@@ -117,7 +117,8 @@ def _run(req, on_progress, on_stage):
         if req.symmetry:
             small = mirror_symmetry(small)
         out.append(small)
-        on_progress(0.95 + 0.05 * len(out) / len(raw))
+        on_stage(f"Post-processing {len(out)}/{len(raw)}")
+    on_progress(1.0)
     _save_debug(req, raw, out)
     return out
 
