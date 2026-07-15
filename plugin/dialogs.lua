@@ -444,8 +444,9 @@ showHistory = function()
         local when = y4 and string.format("%s-%s-%s %s:%s",
                                           y4, mo, dd, hh, mi) or ""
         gc.color = shade(text, 0.65)
+        local count = run.count or #run.images  -- older server: no count
         gc:fillText(string.format("%s   %s   %d variant%s", run.mode, when,
-                                  run.count, run.count == 1 and "" or "s"),
+                                  count, count == 1 and "" or "s"),
                     ROWH + 6, y + 28)
       end
       -- scrollbar
@@ -472,7 +473,7 @@ showHistory = function()
       local i = scroll + math.floor(ev.y / ROWH) + 1
       if rows[i] then
         dlg:close()
-        showRun(rows[i].offset)
+        showRun(rows[i].offset or (i - 1))  -- older server: no offset field
       end
     end,
   }
