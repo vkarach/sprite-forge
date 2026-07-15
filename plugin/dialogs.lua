@@ -383,35 +383,59 @@ local histMode = "list"  -- "list" | "grid"; kept across reopenings
 -- scrolls, click opens the run. Two layouts: rows with description or
 -- a plain 3-column grid of previews.
 showHistory = function()
-  local rows = nil          -- {name, mode, prompt, count, images={b64}}
-  local thumbs = {}         -- all decoded once on arrival: scroll stays free
+  local rows = {}           -- {name, mode, prompt, count, images={b64}}
+  local thumbs = {}         -- decoded as pages arrive: scroll stays free
   local scroll = 0          -- list rows or grid rows, depending on mode
   local status = "Loading history..."
   local ROWH, LISTW, VIS = 56, 600, 7
   local LISTH = ROWH * VIS
   local COLS, GW, GH, GVIS = 3, LISTW // 3, 130, 3
+  -- Paged loading: only ~3 screens per request, prefetching ahead of the
+  -- scroll, so opening History doesn't wait for the whole archive.
+  local PAGE = 21
+  local nextOffset, fetching, allLoaded = 0, false, false
 
   local dlg = Dialog("SpriteForge - History (scroll, click a run)")
 
   local function maxScroll()
-    if not rows then return 0 end
     if histMode == "grid" then
       return math.max(0, math.ceil(#rows / COLS) - GVIS)
     end
     return math.max(0, #rows - VIS)
   end
 
-  client.history(0, 500, true, function(msg)
-    rows = msg.runs
-    for i, run in ipairs(rows) do
-      thumbs[i] = imageFromPayload(run.images[1], "t" .. i)
-    end
-    status = (#rows == 0) and "History is empty." or nil
-    dlg:repaint()
-  end, function(err)
-    status = err
-    dlg:repaint()
-  end)
+  local fetchMore, maybePrefetch
+
+  fetchMore = function()
+    if fetching or allLoaded then return end
+    fetching = true
+    client.history(nextOffset, PAGE, true, function(msg)
+      nextOffset = nextOffset + PAGE
+      allLoaded = nextOffset >= msg.total
+      for _, run in ipairs(msg.runs) do
+        rows[#rows + 1] = run
+        thumbs[#rows] = imageFromPayload(run.images[1], "t" .. #rows)
+      end
+      fetching = false
+      status = (#rows == 0 and allLoaded) and "History is empty." or nil
+      dlg:repaint()
+      maybePrefetch()
+    end, function(err)
+      fetching = false
+      if #rows == 0 then status = err end
+      dlg:repaint()
+    end)
+  end
+
+  maybePrefetch = function()
+    -- keep at least two screens beyond the current position ready
+    local screen = (histMode == "grid") and GVIS * COLS or VIS
+    local pos = (histMode == "grid") and (scroll + GVIS) * COLS
+                or (scroll + VIS)
+    if pos + 2 * screen > #rows then fetchMore() end
+  end
+
+  fetchMore()
 
   local function drawThumb(gc, img, bx, by, bw, bh)
     local s = math.min(bw / img.width, bh / img.height)
@@ -495,7 +519,7 @@ showHistory = function()
       end
     end,
     onwheel = function(ev)
-      if not rows then return end
+      if #rows == 0 then return end
       local unit = (histMode == "grid") and 1 or 2
       local step = (ev.deltaY > 0) and unit or -unit
       local s = math.max(0, math.min(maxScroll(), scroll + step))
@@ -503,9 +527,10 @@ showHistory = function()
         scroll = s
         dlg:repaint()
       end
+      maybePrefetch()
     end,
     onmouseup = function(ev)
-      if not rows then return end
+      if #rows == 0 then return end
       local i
       if histMode == "grid" then
         local c = math.floor(ev.x / GW)
@@ -528,6 +553,7 @@ showHistory = function()
     dlg:modify{ id = "viewmode",
                 text = (histMode == "list") and "Grid view" or "List view" }
     dlg:repaint()
+    maybePrefetch()  -- a grid screen shows more items than a list screen
   end }
   dlg:button{ text = "Close" }
   dlg:show{ wait = true }
