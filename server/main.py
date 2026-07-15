@@ -83,20 +83,13 @@ def _history_msg(offset, limit, preview=False):
 
 
 def _register_default_models():
-    """Idempotent registration of the real pipelines."""
-    def sdxl():
-        from server.pipeline import Pipeline
-        p = Pipeline()
-        p.load()
-        return p
-
+    """Idempotent registration of the real pipeline."""
     def klein():
         from server.instruct import KleinPipeline
         p = KleinPipeline()
         p.load()
         return p
 
-    models.register("sdxl", sdxl)
     models.register("klein", klein)
 
 
@@ -110,7 +103,9 @@ def _run(req, on_progress, on_stage):
         on_progress(v)
         if v >= 0.999:  # last step done; decode runs next inside the pipe call
             on_stage("Decoding images")
-    if req.mode == "instruct":
+    if req.mode in ("instruct", "edit"):
+        # Both are instruction edits on Klein; they differ only in the panel
+        # UI (view presets vs a free prompt).
         pipe = models.get("klein", on_stage=on_stage)
         raw = pipe.edit_by_instruction(req.prompt, req.frames[0].image,
                                        variants=req.variants,
@@ -123,18 +118,12 @@ def _run(req, on_progress, on_stage):
         raw = pipe.txt2img(req.prompt, req.target_size,
                            variants=req.variants, on_progress=gen_progress)
         palette_src = None
-    else:
-        pipe = models.get("sdxl", on_stage=on_stage)
-        if req.mode == "edit":
-            raw = pipe.img2img(req.prompt, req.frames[0].image,
-                               strength=req.strength, variants=req.variants,
-                               on_progress=gen_progress)
-            palette_src = req.frames[0].image
-        else:  # inpaint — parse_request guarantees image+mask exist
-            raw = pipe.inpaint(req.prompt, req.frames[0].image,
-                               req.frames[0].mask, variants=req.variants,
-                               on_progress=gen_progress)
-            palette_src = req.frames[0].image
+    else:  # inpaint — parse_request guarantees image+mask exist
+        pipe = models.get("klein", on_stage=on_stage)
+        raw = pipe.inpaint(req.prompt, req.frames[0].image,
+                           req.frames[0].mask, variants=req.variants,
+                           on_progress=gen_progress)
+        palette_src = req.frames[0].image
 
     # Order matters: strip the background at full resolution first (high
     # contrast, thick outlines - flood fill is reliable there), THEN shrink.

@@ -118,6 +118,21 @@ class KleinPipeline:
             out.extend(img.crop((0, 0, bw, bh)) for img in imgs)
         return [i.convert("RGBA") for i in out]
 
+    def inpaint(self, prompt, image, mask, variants=4, on_progress=None):
+        """Emulated inpaint: Klein edits the whole frame, but only the
+        masked region of the result is kept - pixels outside the selection
+        never change."""
+        edits = self.edit_by_instruction(prompt, image, variants=variants,
+                                         on_progress=on_progress)
+        big_src = image.convert("RGBA").resize(edits[0].size, Image.NEAREST)
+        big_mask = mask.convert("L").resize(edits[0].size, Image.NEAREST)
+        out = []
+        for e in edits:
+            comp = big_src.copy()
+            comp.paste(e, (0, 0), big_mask)
+            out.append(comp)
+        return out
+
     def txt2img(self, prompt, target_size, variants=4, on_progress=None):
         self.load()
         w, h = t2i_size(target_size)

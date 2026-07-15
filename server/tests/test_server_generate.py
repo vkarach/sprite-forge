@@ -12,16 +12,7 @@ from server.protocol import image_to_b64, image_from_raw
 HOST, PORT = "127.0.0.1", 8798
 
 
-class FakePipeline:
-    def img2img(self, prompt, image, strength=0.6, variants=4,
-                on_progress=None):
-        return [image.resize((1024, 1024))] * variants
-
-    def inpaint(self, prompt, image, mask, variants=4, on_progress=None):
-        return [image.resize((1024, 1024))] * variants
-
-
-class FakeKlein:  # one model serves both t2i and instruct, like the real one
+class FakeKlein:  # one model serves every mode, like the real one
     def txt2img(self, prompt, target_size, variants=4, on_progress=None):
         if on_progress:
             on_progress(0.5)
@@ -33,12 +24,14 @@ class FakeKlein:  # one model serves both t2i and instruct, like the real one
                             on_progress=None):
         return [image.resize((1024, 1024))] * variants
 
+    def inpaint(self, prompt, image, mask, variants=4, on_progress=None):
+        return [image.resize((1024, 1024))] * variants
+
 
 @pytest.fixture()
 def server_thread(monkeypatch):
     from server import models
     models.reset()
-    models.register("sdxl", FakePipeline)
     models.register("klein", FakeKlein)
     monkeypatch.setattr(srv, "DEBUG_SAVE", False)  # keep output/ real-only
     loop = asyncio.new_event_loop()
@@ -151,15 +144,15 @@ def test_edit_crops_small_subject_to_fill_frame(server_thread):
     the target instead of collapsing to a few pixels."""
     from server import models
 
-    class SmallSubjectPipeline(FakePipeline):
-        def img2img(self, prompt, image, strength=0.6, variants=4,
-                    on_progress=None):
+    class SmallSubjectKlein(FakeKlein):
+        def edit_by_instruction(self, instruction, image, variants=4,
+                                on_progress=None):
             canvas = Image.new("RGBA", (1024, 1024), (0, 0, 0, 255))
             canvas.paste(Image.new("RGBA", (120, 120), (240, 240, 240, 255)),
                          (452, 800))
             return [canvas] * variants
 
-    models.register("sdxl", SmallSubjectPipeline)
+    models.register("klein", SmallSubjectKlein)
     src = Image.new("RGBA", (16, 16), (240, 240, 240, 255))
 
     async def go():

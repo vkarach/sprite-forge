@@ -12,7 +12,7 @@ local D = {}
 
 -- Settings survive across reopenings of the panel.
 local last = { mode = "Generate", prompt = "", w = nil, h = nil,
-               strength = 60, variants = 4, background = "Auto",
+               variants = 4, background = "Auto",
                view = "Side view (right)", subject = "character",
                instruction = "", symmetry = false,
                genView = "3/4 view", genSubject = "", genDetails = "" }
@@ -672,7 +672,6 @@ function D.open()
     dlg:modify{ id = "sizeSep", visible = m == "Generate" }
     dlg:modify{ id = "w", visible = m == "Generate" }
     dlg:modify{ id = "h", visible = m == "Generate" }
-    dlg:modify{ id = "strength", visible = m == "Edit with AI" }
     dlg:modify{ id = "genView", visible = m == "Generate" }
     dlg:modify{ id = "genSubject", visible = m == "Generate" }
     dlg:modify{ id = "genDetails", visible = m == "Generate" }
@@ -692,7 +691,7 @@ function D.open()
     local d = dlg.data
     last.mode = d.mode; last.prompt = d.prompt
     last.w = d.w; last.h = d.h
-    last.strength = d.strength; last.variants = d.variants
+    last.variants = d.variants
     last.background = d.background
 
     local mode = MODE_KEY[d.mode]
@@ -740,7 +739,6 @@ function D.open()
       payload.prompt = d.prompt
       payload.target_size = { spr.width, spr.height }
       if mode == "edit" then
-        payload.strength = d.strength / 100
         payload.frames = { { image = exportFrame() } }
       else
         local mask = exportMask()
@@ -838,8 +836,6 @@ function D.open()
               text = tostring(last.h or (spr and spr.height) or 64),
               visible = last.mode == "Generate" }
   dlg:separator{ text = "Options" }
-  dlg:slider{ id = "strength", label = "Strength:", min = 20, max = 90,
-              value = last.strength, visible = last.mode == "Edit with AI" }
   dlg:slider{ id = "variants", label = "Variants:", min = 1, max = 8,
               value = last.variants }
   dlg:combobox{ id = "background", label = "Background:",

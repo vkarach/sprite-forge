@@ -17,10 +17,9 @@ Runs entirely on your own GPU — no subscriptions.
 3. `.venv\Scripts\python -m pip install torch --index-url https://download.pytorch.org/whl/cu128`
 4. `install-plugin.bat` (then restart Aseprite)
 
-Generate and Rotate / Instruct share one model (FLUX.2 Klein, ~15 GB
-downloaded on first use); Edit and Inpaint use SDXL (~7 GB). Switching
-between the two groups takes ~20-30 s — only one model fits in VRAM at
-a time.
+Every task runs on one model (FLUX.2 Klein, ~15 GB downloaded on first
+use), so there are no model swaps: after the first load all tasks
+respond in seconds.
 
 ## Use
 
@@ -36,13 +35,18 @@ a time.
    leather cover"), add **Extra** details if needed — the panel shows the
    exact text it will send. "Custom (text only)" sends your subject text
    as-is.
-4. The **Background** option controls transparency: Auto detects and strips
+4. Edit with AI takes instructions, not strength: say what to change and
+   how much ("make the sword glow slightly blue", "repaint the roof in
+   red tiles") — the sprite's style and everything you didn't mention
+   stay put. Inpaint works the same but only ever touches the selected
+   region.
+5. The **Background** option controls transparency: Auto detects and strips
    a uniform background, Remove strips the dominant border color even when
    detection is unsure, Keep leaves the image fully opaque.
-5. **History** opens past generations (stored in `output/`), newest first:
+6. **History** opens past generations (stored in `output/`), newest first:
    a scrollable list (or a 3-column grid — toggle at the bottom); click a
    run to see its variants, click a variant to insert it as a layer.
-6. Rotate / Instruct tips: name the subject explicitly (e.g.
+7. Rotate / Instruct tips: name the subject explicitly (e.g.
    "four-legged brown horse" — a generic "character" mutates it), use the
    Extra field for refinements, and enable Mirror symmetry for front/back
    views.
