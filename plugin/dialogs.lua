@@ -254,6 +254,134 @@ local function showResults(imgs, onInserted)
   app.refresh()
 end
 
+-- History window: pages through past runs (newest first), one run per page.
+local function showHistory()
+  local idx, total = 0, 0
+  local run, imgs, inserted = nil, {}, {}
+  local status = "Loading history..."
+  local CW, HEAD = 600, 34
+  local CH = 360 + HEAD
+
+  local dlg = Dialog("SpriteForge - History (click to insert / remove)")
+
+  local function grid()
+    local count = #imgs
+    if count == 0 then return 1, 1, 0, 0, 1 end
+    local iw, ih = imgs[1].width, imgs[1].height
+    local cols = (count <= 2) and count or ((count <= 4) and 2 or 4)
+    local rows = math.ceil(count / cols)
+    local scale = math.min(CW / (cols * iw), (CH - HEAD) / (rows * ih))
+    if scale >= 1 then scale = math.min(math.floor(scale), 6) end
+    return cols, rows, math.floor(iw * scale) + 6,
+           math.floor(ih * scale) + 6, scale
+  end
+
+  local function fetch(i)
+    status = "Loading history..."
+    run, imgs, inserted = nil, {}, {}
+    dlg:repaint()
+    client.history(i, 1, function(msg)
+      total = msg.total
+      idx = i
+      run = msg.runs[1]
+      if run then
+        for n, s in ipairs(run.images) do
+          imgs[n] = imageFromB64(s, "h" .. n)
+        end
+        status = nil
+      else
+        status = (total == 0) and "History is empty."
+                 or "This run has no images."
+      end
+      dlg:modify{ id = "older", enabled = idx + 1 < total }
+      dlg:modify{ id = "newer", enabled = idx > 0 }
+      dlg:repaint()
+    end, function(err)
+      status = err
+      dlg:repaint()
+    end)
+  end
+
+  dlg:canvas{
+    id = "hgrid", width = CW, height = CH,
+    onpaint = function(ev)
+      local gc = ev.context
+      local face = themeColor("window_face", Color{ r = 200, g = 200, b = 200 })
+      local text = themeColor("text", Color{ r = 40, g = 40, b = 40 })
+      gc.color = face
+      gc:fillRect(Rectangle(0, 0, CW, CH))
+      gc.color = text
+      if status then
+        gc:fillText(status, 8, 8)
+        return
+      end
+      -- header: "3/12  generate  2026-07-15 20:46" + prompt
+      local y4, mo, dd, hh, mi = run.name:match(
+        "^(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)")
+      local when = y4 and string.format("%s-%s-%s %s:%s",
+                                        y4, mo, dd, hh, mi) or ""
+      gc:fillText(string.format("%d/%d   %s   %s",
+                                idx + 1, total, run.mode, when), 8, 4)
+      local prompt = run.prompt
+      if #prompt > 92 then prompt = prompt:sub(1, 92) .. "..." end
+      gc.color = shade(text, 0.75)
+      gc:fillText(prompt, 8, 18)
+      local cols, rows, cw, ch, scale = grid()
+      local iw, ih = imgs[1].width, imgs[1].height
+      for n, img in ipairs(imgs) do
+        local c = (n - 1) % cols
+        local r = math.floor((n - 1) / cols)
+        local dx, dy = c * cw + 3, HEAD + r * ch + 3
+        local dw, dh = math.floor(iw * scale), math.floor(ih * scale)
+        for qy = 0, dh - 1, 8 do
+          for qx = 0, dw - 1, 8 do
+            if ((qx + qy) // 8) % 2 == 0 then
+              gc.color = Color{ r = 190, g = 190, b = 190 }
+            else
+              gc.color = Color{ r = 150, g = 150, b = 150 }
+            end
+            gc:fillRect(Rectangle(dx + qx, dy + qy,
+              math.min(8, dw - qx), math.min(8, dh - qy)))
+          end
+        end
+        gc:drawImage(img, Rectangle(0, 0, iw, ih),
+                     Rectangle(dx, dy, dw, dh))
+        if inserted[n] then
+          gc.color = Color{ r = 106, g = 160, b = 100 }
+          gc:fillRect(Rectangle(dx - 2, dy - 2, dw + 4, 2))
+          gc:fillRect(Rectangle(dx - 2, dy + dh, dw + 4, 2))
+          gc:fillRect(Rectangle(dx - 2, dy, 2, dh))
+          gc:fillRect(Rectangle(dx + dw, dy, 2, dh))
+        end
+      end
+    end,
+    onmouseup = function(ev)
+      if status then return end
+      local cols, rows, cw, ch = grid()
+      local c = math.floor(ev.x / cw)
+      local r = math.floor((ev.y - HEAD) / ch)
+      if c < 0 or c >= cols or r < 0 then return end
+      local n = r * cols + c + 1
+      if not imgs[n] then return end
+      if inserted[n] then
+        removeInserted(inserted[n])
+        inserted[n] = nil
+      else
+        inserted[n] = insertAsLayer(imgs[n], "SpriteForge H" .. n)
+      end
+      dlg:repaint()
+    end,
+  }
+  dlg:button{ id = "older", text = "< Older", enabled = false,
+              onclick = function() fetch(idx + 1) end }
+  dlg:button{ id = "newer", text = "Newer >", enabled = false,
+              onclick = function() fetch(idx - 1) end }
+  dlg:button{ text = "Close" }
+  fetch(0)
+  dlg:show{ wait = true }
+  app.refresh()
+end
+
 function D.open()
   if D._isOpen then return end
 
@@ -652,6 +780,7 @@ function D.open()
     if job then job.cancel() end
     setState("idle", "Cancelled. Press Run to try again.")
   end }
+  dlg:button{ id = "historybtn", text = "History", onclick = showHistory }
   dlg:button{ id = "closebtn", text = "Close", onclick = function()
     dlg:close()
   end }

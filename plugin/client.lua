@@ -60,6 +60,47 @@ function M.request(payload, callbacks)
   return { cancel = finish }
 end
 
+-- Fetch one page of past runs: onOk(msg) with msg.total and msg.runs.
+function M.history(offset, limit, onOk, onFail)
+  local ws
+  local timer
+  local done = false
+  ws = WebSocket{
+    url = M.URL,
+    deflate = false,
+    onreceive = function(mt, data)
+      if mt == WebSocketMessageType.OPEN then
+        if timer then timer:stop() end
+        ws:sendText(json.encode({ type = "history", offset = offset,
+                                  limit = limit }))
+      elseif mt == WebSocketMessageType.TEXT then
+        done = true; ws:close()
+        local ok, msg = pcall(json.decode, data)
+        if ok and msg.type == "history" then onOk(msg)
+        else onFail("bad reply") end
+      elseif mt == WebSocketMessageType.CLOSE and not done then
+        done = true
+        onFail("Server offline. Run start-server.bat.")
+      end
+    end,
+  }
+  if Timer then
+    timer = Timer{
+      interval = 5.0,
+      ontick = function()
+        timer:stop()
+        if not done then
+          done = true
+          ws:close()
+          onFail("Server offline. Run start-server.bat.")
+        end
+      end,
+    }
+    timer:start()
+  end
+  ws:connect()
+end
+
 function M.ping(onOk, onFail)
   local ws
   local timer

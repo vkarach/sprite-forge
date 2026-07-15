@@ -52,6 +52,29 @@ def _save_debug(req, raw_images, final_images):
         log.exception("debug save failed")  # never break generation over this
 
 
+def _history_msg(offset, limit):
+    """Page of past runs, newest first: folder names sort by timestamp."""
+    import base64
+    folders = sorted((p for p in DEBUG_DIR.iterdir() if p.is_dir()),
+                     key=lambda p: p.name, reverse=True) \
+        if DEBUG_DIR.exists() else []
+    runs = []
+    for folder in folders[offset:offset + max(limit, 0)]:
+        try:
+            meta = json.loads((folder / "settings.json").read_text("utf-8"))
+        except (OSError, json.JSONDecodeError):
+            meta = {}
+        images = [base64.b64encode(f.read_bytes()).decode("ascii")
+                  for f in sorted(folder.glob("final_*.png"))]
+        if images:
+            runs.append({"name": folder.name,
+                         "mode": meta.get("mode", "?"),
+                         "prompt": meta.get("prompt", ""),
+                         "images": images})
+    return json.dumps({"type": "history", "total": len(folders),
+                       "offset": offset, "runs": runs})
+
+
 def _register_default_models():
     """Idempotent registration of the real pipelines."""
     def sdxl():
@@ -178,7 +201,11 @@ async def _handler(ws):
             if isinstance(data, dict) and data.get("type") == "ping":
                 await ws.send(json.dumps({"type": "pong"}))
                 continue
-        except json.JSONDecodeError:
+            if isinstance(data, dict) and data.get("type") == "history":
+                await ws.send(_history_msg(int(data.get("offset", 0)),
+                                           int(data.get("limit", 1))))
+                continue
+        except (json.JSONDecodeError, ValueError, TypeError):
             pass  # fall through to parse_request for a proper error
         try:
             req = parse_request(message)

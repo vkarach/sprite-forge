@@ -186,6 +186,30 @@ def test_edit_crops_small_subject_to_fill_frame(server_thread):
     assert opaque > 1500, f"subject collapsed: only {opaque}/4096 opaque px"
 
 
+def test_history_pages_newest_first(server_thread, monkeypatch, tmp_path):
+    import json as _json
+    for n, (stamp, prompt) in enumerate([("20260101-000000", "old sword"),
+                                         ("20260102-000000", "new book")]):
+        folder = tmp_path / f"{stamp}_generate_x_{n}"
+        folder.mkdir()
+        Image.new("RGBA", (8, 8), (n, 0, 0, 255)).save(folder / "final_0.png")
+        (folder / "settings.json").write_text(_json.dumps(
+            {"mode": "generate", "prompt": prompt}), encoding="utf-8")
+    monkeypatch.setattr(srv, "DEBUG_DIR", tmp_path)
+
+    async def go():
+        async with websockets.connect(f"ws://{HOST}:{PORT}",
+                                      max_size=64 * 2**20) as ws:
+            await ws.send(json.dumps({"type": "history", "offset": 0,
+                                      "limit": 1}))
+            return json.loads(await ws.recv())
+    msg = asyncio.run(go())
+    assert msg["type"] == "history" and msg["total"] == 2
+    assert msg["runs"][0]["prompt"] == "new book"  # newest first
+    img = image_from_b64(msg["runs"][0]["images"][0])
+    assert img.size == (8, 8)
+
+
 def test_t2i_size_matches_target_aspect():
     from server.instruct import t2i_size
     assert t2i_size((64, 64)) == (512, 512)

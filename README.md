@@ -39,7 +39,9 @@ on its first use; switching between tasks that need different models takes
 4. The **Background** option controls transparency: Auto detects and strips
    a uniform background, Remove strips the dominant border color even when
    detection is unsure, Keep leaves the image fully opaque.
-5. Rotate / Instruct tips: name the subject explicitly (e.g.
+5. **History** opens past generations (stored in `output/`), newest first:
+   page with Older/Newer, click a variant to insert it as a layer.
+6. Rotate / Instruct tips: name the subject explicitly (e.g.
    "four-legged brown horse" — a generic "character" mutates it), use the
    Extra field for refinements, and enable Mirror symmetry for front/back
    views.
