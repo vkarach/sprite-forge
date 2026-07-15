@@ -557,6 +557,19 @@ function D.open()
         line = line:gsub("%.+$", "")
         line = line .. string.rep(".", math.floor(os.clock() * 3) % 4)
       end
+      -- ellipsize so a long stage message never collides with the
+      -- server-status word on the right
+      local maxW = STATUS_W - 62
+      local fits = function(s)
+        local ok, size = pcall(function() return gc:measureText(s) end)
+        return not ok or not size or size.width <= maxW
+      end
+      if not fits(line) then
+        while #line > 1 and not fits(line .. "...") do
+          line = line:sub(1, #line - 1)
+        end
+        line = line .. "..."
+      end
       gc:fillText(line, 8, 6)
       local srv = { online = { Color{ r = 106, g = 160, b = 100 }, "online" },
                     offline = { Color{ r = 168, g = 82, b = 62 }, "offline" },

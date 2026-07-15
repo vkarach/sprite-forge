@@ -38,7 +38,7 @@ def get(name, on_stage=None):
         except Exception:  # torch absent in unit tests
             pass
     if on_stage:
-        on_stage(f"Loading {name} model (first time may take a minute)...")
+        on_stage(f"Loading {name} model...")
     log.info("loading %s", name)
     _resident = _factories[name]()
     _resident_name = name

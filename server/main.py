@@ -96,6 +96,7 @@ def _run(req, on_progress, on_stage):
     elif req.mode == "generate":
         # Klein follows detailed prose prompts; SDXL+LoRA only handles tags
         pipe = models.get("klein_t2i", on_stage=on_stage)
+        on_stage("Preparing prompt")  # text encode runs before step ticks
         raw = pipe.txt2img(req.prompt, req.target_size,
                            variants=req.variants, on_progress=gen_progress)
         palette_src = None
@@ -144,39 +145,29 @@ class JobCancelled(Exception):
 
 async def handle_request(ws, req):
     loop = asyncio.get_running_loop()
-    pending = []
+
+    def send(msg):
+        # Called from the GPU worker thread.  If the client is gone (Cancel
+        # closes the socket), abort the job instead of burning GPU time.
+        if getattr(ws, "close_code", None) is not None:
+            raise JobCancelled()
+        f = asyncio.run_coroutine_threadsafe(ws.send(msg), loop)
+        # Wait for the actual send: the CPU-offload pipeline hogs the GIL so
+        # hard the loop otherwise flushes progress in per-variant bursts.
+        # Waiting also guarantees ordering before the final result message.
+        try:
+            f.result(5)
+        except Exception as e:
+            log.debug("progress send failed: %r", e)
 
     def on_progress(v):
-        # Called from the GPU worker thread on every diffusion step.  If the
-        # client is gone (Cancel closes the socket), abort the job instead of
-        # burning GPU time on a result nobody will receive.
-        if getattr(ws, "close_code", None) is not None:
-            raise JobCancelled()
-        f = asyncio.run_coroutine_threadsafe(
-            ws.send(progress_msg(req.id, v)), loop)
-        pending.append(f)
+        send(progress_msg(req.id, v))
 
     def on_stage(text):
-        if getattr(ws, "close_code", None) is not None:
-            raise JobCancelled()
-        f = asyncio.run_coroutine_threadsafe(
-            ws.send(progress_msg(req.id, 0.0, stage=text)), loop)
-        pending.append(f)
+        send(progress_msg(req.id, 0.0, stage=text))
 
     images = await loop.run_in_executor(
         _gpu_executor, functools.partial(_run, req, on_progress, on_stage))
-
-    # Drain all in-flight progress sends before the result so ordering is
-    # guaranteed.  return_exceptions=True ensures a closed socket during a
-    # progress send doesn't abort the result path.
-    results = await asyncio.gather(
-        *[asyncio.wrap_future(f) for f in pending],
-        return_exceptions=True,
-    )
-    for r in results:
-        if isinstance(r, Exception):
-            log.debug("progress send failed: %r", r)
-
     await ws.send(result_msg(req.id, images))
 
 
