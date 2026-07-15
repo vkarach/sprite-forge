@@ -11,8 +11,23 @@ PROMPT_SUFFIX = (", pixel art, flat colors, clean outlines, simple shapes,"
 NEGATIVE = ("blurry, smooth shading, gradient, photo, 3d render, pattern,"
             " tiling, repeating, noisy, multiple objects, border, frame, text")
 STEPS = 30
+TOKEN_BUDGET = 75  # CLIP hard limit: 77 tokens incl. BOS/EOS
 
 log = logging.getLogger("spriteforge.pipeline")
+
+
+def clamp_prompt(prompt: str, suffix: str, tokenizers,
+                 budget: int = TOKEN_BUDGET) -> str:
+    """Trim the USER prompt so prompt+suffix fits every tokenizer's budget;
+    the style suffix is never sacrificed."""
+    for tok in tokenizers:
+        ids = tok(prompt, add_special_tokens=False).input_ids
+        room = budget - len(tok(suffix, add_special_tokens=False).input_ids)
+        if len(ids) > room:
+            prompt = tok.decode(ids[:max(room, 0)]).strip()
+            log.warning("prompt over CLIP's %d-token budget; clipped to %r",
+                        budget, prompt)
+    return prompt + suffix
 
 
 class Pipeline:
@@ -42,7 +57,7 @@ class Pipeline:
         self._inpaint = AutoPipelineForInpainting.from_pipe(self._txt2img)
         # Decode variants one at a time: the batched VAE decode of several
         # 1024px images spikes VRAM and spills to host RAM on a full 16 GB card.
-        self._txt2img.enable_vae_slicing()
+        self._txt2img.vae.enable_slicing()
         # Weights now live in VRAM; drop the CPU-side loading leftovers so
         # the server does not sit on gigabytes of host RAM.
         import gc
@@ -58,10 +73,15 @@ class Pipeline:
             return kw
         return cb
 
+    def _full_prompt(self, prompt):
+        return clamp_prompt(prompt, PROMPT_SUFFIX,
+                            (self._txt2img.tokenizer,
+                             self._txt2img.tokenizer_2))
+
     def txt2img(self, prompt, variants=4, on_progress=None):
         self.load()
         out = self._txt2img(
-            prompt=prompt + PROMPT_SUFFIX, negative_prompt=NEGATIVE,
+            prompt=self._full_prompt(prompt), negative_prompt=NEGATIVE,
             num_inference_steps=STEPS, num_images_per_prompt=variants,
             width=1024, height=1024,
             callback_on_step_end=self._cb(on_progress, STEPS),
@@ -74,7 +94,7 @@ class Pipeline:
         big = upscale_for_model(image.convert("RGB"))
         steps = max(int(STEPS / max(strength, 0.05)), STEPS)
         out = self._img2img(
-            prompt=prompt + PROMPT_SUFFIX, negative_prompt=NEGATIVE,
+            prompt=self._full_prompt(prompt), negative_prompt=NEGATIVE,
             image=big, strength=strength,
             num_inference_steps=steps, num_images_per_prompt=variants,
             callback_on_step_end=self._cb(on_progress, int(steps * strength)),
@@ -86,7 +106,7 @@ class Pipeline:
         big = upscale_for_model(image.convert("RGB"))
         big_mask = mask.convert("L").resize(big.size, Image.NEAREST)
         out = self._inpaint(
-            prompt=prompt + PROMPT_SUFFIX, negative_prompt=NEGATIVE,
+            prompt=self._full_prompt(prompt), negative_prompt=NEGATIVE,
             image=big, mask_image=big_mask, strength=0.99,
             num_inference_steps=STEPS, num_images_per_prompt=variants,
             width=big.size[0], height=big.size[1],

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from PIL import Image
 
 VALID_MODES = ("generate", "edit", "inpaint", "instruct")
+VALID_BACKGROUNDS = ("auto", "remove", "keep")
 
 
 class ProtocolError(Exception):
@@ -28,6 +29,7 @@ class Request:
     variants: int = 4
     strength: float = 0.6
     symmetry: bool = False
+    background: str = "auto"
     frames: list[Frame] = field(default_factory=list)
 
 
@@ -62,6 +64,10 @@ def parse_request(text: str) -> Request:
     if mode not in VALID_MODES:
         raise ProtocolError(f"unknown mode '{mode}'")
 
+    background = str(data.get("background", "auto"))
+    if background not in VALID_BACKGROUNDS:
+        raise ProtocolError(f"unknown background '{background}'")
+
     frames = []
     for f in data.get("frames", []):
         if not isinstance(f, dict):
@@ -81,6 +87,7 @@ def parse_request(text: str) -> Request:
         variants=int(data.get("variants", 4)),
         strength=float(data.get("strength", 0.6)),
         symmetry=bool(data.get("symmetry", False)),
+        background=background,
         frames=frames,
     )
 

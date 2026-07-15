@@ -29,6 +29,23 @@ def test_parse_generate_request_defaults():
     assert req.strength == 0.6
     assert req.target_size == (64, 64)
     assert req.frames == []
+    assert req.background == "auto"
+
+
+def test_parse_background_field():
+    req = parse_request(json.dumps({
+        "id": "r1b", "mode": "generate", "prompt": "sword",
+        "target_size": [64, 64], "frames": [], "background": "keep",
+    }))
+    assert req.background == "keep"
+
+
+def test_parse_background_rejects_unknown():
+    with pytest.raises(ProtocolError):
+        parse_request(json.dumps({
+            "id": "r1c", "mode": "generate", "prompt": "sword",
+            "target_size": [64, 64], "frames": [], "background": "maybe",
+        }))
 
 
 def test_parse_edit_request_decodes_frame():

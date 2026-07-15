@@ -12,9 +12,12 @@ local D = {}
 
 -- Settings survive across reopenings of the panel.
 local last = { mode = "Generate", prompt = "", w = nil, h = nil,
-               strength = 60, variants = 4,
+               strength = 60, variants = 4, background = "Auto",
                view = "Side view (right)", subject = "character",
                instruction = "", symmetry = false }
+
+local BG_KEY = { ["Auto"] = "auto", ["Remove"] = "remove",
+                 ["Keep"] = "keep" }
 
 local MODE_KEY = { ["Generate"] = "generate",
                    ["Edit with AI"] = "edit",
@@ -45,7 +48,7 @@ local function assembleInstruction(viewPreset, subject, extra)
   return text
 end
 
-local STATUS_W, STATUS_H = 300, 58  -- status line + up to 3 checklist rows
+local STATUS_W, STATUS_H = 282, 58  -- status line + up to 3 checklist rows
 
 -- Colors come from the active Aseprite theme so the status area looks like
 -- part of the dialog (no dark box on a light theme).
@@ -338,10 +341,12 @@ function D.open()
     last.mode = d.mode; last.prompt = d.prompt
     last.w = d.w; last.h = d.h
     last.strength = d.strength; last.variants = d.variants
+    last.background = d.background
 
     local mode = MODE_KEY[d.mode]
     local payload = { id = newId(), mode = mode,
-                      variants = d.variants, frames = {} }
+                      variants = d.variants, frames = {},
+                      background = BG_KEY[d.background] or "auto" }
     if mode == "instruct" then
       local spr = app.sprite
       if not spr then
@@ -397,15 +402,14 @@ function D.open()
 
     job = client.request(payload, {
       onprogress = function(v, stage)
-        progress = v
+        -- A stage message (model load / decode / postprocess) only relabels;
+        -- the bar stays where it is - full after generation, empty (animated)
+        -- before it during a model load. Numeric ticks fill the bar.
         if stage then
-          statusText = stage  -- e.g. "Loading klein model..." during a swap
-        elseif v < 0.85 then
-          statusText = "Generating"
-        elseif v < 0.95 then
-          statusText = "Decoding images"
+          statusText = stage
         else
-          statusText = "Post-processing"
+          progress = v
+          statusText = "Generating"
         end
         repaint()
       end,
@@ -470,10 +474,13 @@ function D.open()
               text = tostring(last.h or (spr and spr.height) or 64),
               visible = last.mode == "Generate" }
   dlg:separator{ text = "Options" }
-  dlg:slider{ id = "strength", label = "Strength %:", min = 20, max = 90,
+  dlg:slider{ id = "strength", label = "Strength:", min = 20, max = 90,
               value = last.strength, visible = last.mode == "Edit with AI" }
   dlg:slider{ id = "variants", label = "Variants:", min = 1, max = 8,
               value = last.variants }
+  dlg:combobox{ id = "background", label = "Background:",
+                option = last.background,
+                options = { "Auto", "Remove", "Keep" } }
   dlg:separator{ text = "Status" }
   dlg:canvas{
     id = "view", width = STATUS_W, height = STATUS_H,

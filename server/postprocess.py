@@ -5,26 +5,40 @@ from scipy import ndimage
 
 
 def downscale(img: Image.Image, target_size: tuple[int, int],
-              keep: float = 0.3) -> Image.Image:
-    """Alpha-aware downscale. A cell stays opaque when at least `keep` of its
-    source pixels are opaque (biased toward keeping thin features like sword
-    guards); its color is the per-channel median of the opaque pixels, which
-    is robust against the pixel-level noise of AI-generated images."""
+              keep: float = 0.3,
+              palette: list[tuple[int, int, int]] | None = None
+              ) -> Image.Image:
+    """Palette-majority downscale: each opaque pixel votes for its nearest
+    palette color, the cell takes the winner. Unlike a median this never
+    invents in-between colors, so outlines survive. A cell stays opaque
+    when at least `keep` of its pixels are opaque."""
     tw, th = target_size
     arr = np.asarray(img.convert("RGBA"))
     h, w = arr.shape[:2]
-    xs = np.linspace(0, w, tw + 1, dtype=int)
-    ys = np.linspace(0, h, th + 1, dtype=int)
-    out = np.zeros((th, tw, 4), dtype=np.uint8)
-    for j in range(th):
-        for i in range(tw):
-            cell = arr[ys[j]:max(ys[j + 1], ys[j] + 1),
-                       xs[i]:max(xs[i + 1], xs[i] + 1)].reshape(-1, 4)
-            opaque = cell[cell[:, 3] > 0]
-            if len(opaque) >= keep * len(cell):
-                out[j, i, :3] = np.median(opaque[:, :3], axis=0)
-                out[j, i, 3] = 255
-    return Image.fromarray(out, "RGBA")
+    if palette is None:
+        palette = subject_palette(img, 16)
+    pal = np.asarray(palette, dtype=np.float32)
+
+    flat = arr.reshape(-1, 4)
+    rgb = flat[:, :3].astype(np.float32)
+    dists = ((rgb ** 2).sum(1)[:, None] - 2.0 * (rgb @ pal.T)
+             + (pal ** 2).sum(1)[None, :])
+    nearest = dists.argmin(1)
+
+    ci = np.minimum(np.arange(w) * tw // w, tw - 1)
+    cj = np.minimum(np.arange(h) * th // h, th - 1)
+    cell = (cj[:, None] * tw + ci[None, :]).ravel()
+    opaque = flat[:, 3] > 0
+    votes = np.zeros((tw * th, len(pal)), dtype=np.int32)
+    np.add.at(votes, (cell[opaque], nearest[opaque]), 1)
+    total = np.bincount(cell, minlength=tw * th)
+    opq = votes.sum(1)
+
+    out = np.zeros((tw * th, 4), dtype=np.uint8)
+    solid = (opq > 0) & (opq >= keep * total)
+    out[solid, :3] = pal[votes.argmax(1)[solid]].astype(np.uint8)
+    out[solid, 3] = 255
+    return Image.fromarray(out.reshape(th, tw, 4), "RGBA")
 
 
 def extract_palette(img: Image.Image, max_colors: int = 16) -> list[tuple[int, int, int]]:
@@ -62,14 +76,16 @@ def crop_to_subject(img: Image.Image, margin: float = 0.04) -> Image.Image:
     return img.convert("RGBA").crop((x0, y0, x1, y1))
 
 
-def fit_into(img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
+def fit_into(img: Image.Image, target_size: tuple[int, int],
+             palette: list[tuple[int, int, int]] | None = None
+             ) -> Image.Image:
     """Downscale preserving aspect ratio and center on a transparent canvas
     of target_size (pixel-art letterboxing)."""
     tw, th = target_size
     scale = min(tw / img.width, th / img.height)
     fw = max(1, round(img.width * scale))
     fh = max(1, round(img.height * scale))
-    small = downscale(img, (fw, fh))
+    small = downscale(img, (fw, fh), palette=palette)
     canvas = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
     canvas.paste(small, ((tw - fw) // 2, (th - fh) // 2))
     return canvas
@@ -113,17 +129,22 @@ def snap_to_palette(img: Image.Image, palette: list[tuple[int, int, int]]) -> Im
     return Image.fromarray(out.reshape(h, w, 4), "RGBA")
 
 
-def remove_background(img: Image.Image, tolerance: int = 12) -> Image.Image:
-    """Flood-fill from all border pixels that match the corner-average
-    background color (within tolerance); reached pixels become transparent.
-    Enclosed same-colored regions are NOT cleared (flood, not global match)."""
+def remove_background(img: Image.Image, tolerance: int = 12,
+                      force: bool = False) -> Image.Image:
+    """Flood-fill from border pixels matching the dominant border color;
+    reached pixels become transparent, enclosed regions are kept. Skipped
+    when under 60% of the border matches, unless `force` is set."""
     arr = np.asarray(img.convert("RGBA")).astype(int).copy()
     h, w = arr.shape[:2]
-    corners = np.array([arr[0, 0, :3], arr[0, w - 1, :3],
-                        arr[h - 1, 0, :3], arr[h - 1, w - 1, :3]])
-    if corners.std(axis=0).max() > tolerance:
-        return img.convert("RGBA")  # no uniform background detected
-    bg = corners.mean(axis=0)
+    border = np.concatenate([arr[0, :, :3], arr[-1, :, :3],
+                             arr[:, 0, :3], arr[:, -1, :3]])
+    # snap the median to a real border color (a 50/50 border would otherwise
+    # yield a blend that matches nothing)
+    med = np.median(border, axis=0)
+    bg = border[np.abs(border - med).sum(axis=1).argmin()]
+    matching = (np.abs(border - bg).max(axis=1) <= tolerance).mean()
+    if not force and matching < 0.6:
+        return img.convert("RGBA")  # no dominant background color detected
 
     bgmask = np.abs(arr[:, :, :3] - bg).max(axis=2) <= tolerance
     seed = np.zeros((h, w), dtype=bool)

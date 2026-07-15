@@ -11,8 +11,8 @@ import websockets
 
 from server import models
 from server.postprocess import (crop_to_subject, fit_into, mirror_symmetry,
-                                snap_to_palette, subject_palette,
-                                sprite_palette, remove_background)
+                                subject_palette, sprite_palette,
+                                remove_background)
 from server.protocol import ProtocolError, parse_request, error_msg, \
     progress_msg, result_msg
 
@@ -73,32 +73,34 @@ def _register_default_models():
 def _run(req, on_progress, on_stage):
     """Blocking generation + postprocess. Runs in the GPU worker thread.
 
-    Progress honesty: diffusion steps only cover 0..0.85 of the bar; VAE
-    decode happens inside the pipeline call after the last step, so 0.85
-    is where the bar waits for it.  0.95 = decoding done, postprocessing.
+    The bar fills 0..1 over the diffusion steps; VAE decode and postprocess
+    run after that and are reported as stage labels, not bar movement.
     """
-    step_progress = lambda v: on_progress(v * 0.85)
+    def gen_progress(v):
+        on_progress(v)
+        if v >= 0.999:  # last step done; decode runs next inside the pipe call
+            on_stage("Decoding images")
     if req.mode == "instruct":
         pipe = models.get("klein", on_stage=on_stage)
         raw = pipe.edit_by_instruction(req.prompt, req.frames[0].image,
                                        variants=req.variants,
-                                       on_progress=step_progress)
+                                       on_progress=gen_progress)
         palette_src = req.frames[0].image
     else:
         pipe = models.get("sdxl", on_stage=on_stage)
         if req.mode == "generate":
             raw = pipe.txt2img(req.prompt, variants=req.variants,
-                               on_progress=step_progress)
+                               on_progress=gen_progress)
             palette_src = None
         elif req.mode == "edit":
             raw = pipe.img2img(req.prompt, req.frames[0].image,
                                strength=req.strength, variants=req.variants,
-                               on_progress=step_progress)
+                               on_progress=gen_progress)
             palette_src = req.frames[0].image
         else:  # inpaint — parse_request guarantees image+mask exist
             raw = pipe.inpaint(req.prompt, req.frames[0].image,
                                req.frames[0].mask, variants=req.variants,
-                               on_progress=step_progress)
+                               on_progress=gen_progress)
             palette_src = req.frames[0].image
 
     # Order matters: strip the background at full resolution first (high
@@ -109,17 +111,20 @@ def _run(req, on_progress, on_stage):
     out = []
     on_stage(f"Post-processing 0/{len(raw)}")
     for img in raw:
-        cut = remove_background(img, tolerance=16)
+        if req.background == "keep":
+            cut = img.convert("RGBA")
+        else:
+            cut = remove_background(img, tolerance=16,
+                                    force=req.background == "remove")
         # Not inpaint: cropping would break its mask alignment.
         if req.mode in ("generate", "edit"):
             cut = crop_to_subject(cut)
-        small = fit_into(cut, req.target_size)
-        small = snap_to_palette(small, pal or subject_palette(cut, 16))
+        small = fit_into(cut, req.target_size,
+                         palette=pal or subject_palette(cut, 16))
         if req.symmetry:
             small = mirror_symmetry(small)
         out.append(small)
         on_stage(f"Post-processing {len(out)}/{len(raw)}")
-    on_progress(1.0)
     _save_debug(req, raw, out)
     return out
 
@@ -196,7 +201,11 @@ async def _handler(ws):
 async def serve(host="127.0.0.1", port=8765, stop=None, on_ready=None):
     if not models._factories:
         _register_default_models()
-    async with websockets.serve(_handler, host, port, max_size=64 * 2**20):
+    # no keepalive pings: GIL-heavy generation starves the loop and the 20s
+    # ping timeout used to kill the socket mid-job (localhost: TCP close is
+    # enough to detect a dead client)
+    async with websockets.serve(_handler, host, port, max_size=64 * 2**20,
+                                ping_interval=None):
         log.info("SpriteForge server on ws://%s:%s", host, port)
         if on_ready:
             on_ready()

@@ -134,6 +134,66 @@ def test_extract_palette_limits_colors():
     assert len(pal) <= 2
 
 
+def test_downscale_with_palette_keeps_thin_outline_colors():
+    # 34 outline px vs 30 fill px: majority picks outline, median would blend
+    img = Image.new("RGBA", (8, 8), (200, 60, 60, 255))
+    n = 0
+    for y in range(8):
+        for x in range(8):
+            if n < 34:
+                img.putpixel((x, y), (20, 10, 10, 255))
+                n += 1
+    out = downscale(img, (1, 1), palette=[(20, 10, 10), (200, 60, 60)])
+    assert out.getpixel((0, 0)) == (20, 10, 10, 255)
+
+
+def test_downscale_output_only_uses_palette_colors():
+    # noisy shades of red -> output must be an exact palette color
+    img = Image.new("RGBA", (4, 4))
+    for y in range(4):
+        for x in range(4):
+            img.putpixel((x, y), (200 + x + y * 4, 8, 8, 255))
+    out = downscale(img, (1, 1), palette=[(210, 8, 8), (0, 0, 255)])
+    assert out.getpixel((0, 0)) == (210, 8, 8, 255)
+
+
+def test_fit_into_accepts_palette():
+    img = Image.new("RGBA", (10, 20), (100, 200, 100, 255))
+    out = fit_into(img, (16, 16), palette=[(0, 255, 0)])
+    assert out.getpixel((8, 8)) == (0, 255, 0, 255)
+
+
+def test_remove_background_tolerates_one_odd_corner():
+    # subject touches a corner; the old 4-corner check bailed out here
+    img = Image.new("RGBA", (10, 10), (255, 255, 255, 255))
+    for x in range(3):
+        for y in range(3):
+            img.putpixel((x, y), (255, 0, 0, 255))
+    out = remove_background(img)
+    assert out.getpixel((9, 9))[3] == 0
+    assert out.getpixel((0, 0)) == (255, 0, 0, 255)
+
+
+def test_remove_background_skips_when_border_is_busy():
+    # half red / half blue border: no dominant background, keep everything
+    img = Image.new("RGBA", (10, 10), (255, 0, 0, 255))
+    for y in range(5, 10):
+        for x in range(10):
+            img.putpixel((x, y), (0, 0, 255, 255))
+    out = remove_background(img)
+    arr = out.load()
+    assert all(arr[x, y][3] == 255 for x in range(10) for y in range(10))
+
+
+def test_remove_background_force_overrides_detection():
+    img = Image.new("RGBA", (10, 10), (255, 0, 0, 255))
+    for y in range(5, 10):
+        for x in range(10):
+            img.putpixel((x, y), (0, 0, 255, 255))
+    out = remove_background(img, force=True)
+    assert (out.getpixel((0, 0))[3] == 0) or (out.getpixel((9, 9))[3] == 0)
+
+
 def test_remove_background():
     # white bg, red 2x2 square in the middle; bg becomes transparent,
     # square stays opaque

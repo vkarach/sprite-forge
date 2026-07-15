@@ -16,6 +16,7 @@ class FakePipeline:
     def txt2img(self, prompt, variants=4, on_progress=None):
         if on_progress:
             on_progress(0.5)
+            on_progress(1.0)
         return [Image.new("RGBA", (1024, 1024), (255, 0, 0, 255))
                 for _ in range(variants)]
 
@@ -76,9 +77,10 @@ def test_generate_returns_progress_then_result(server_thread):
     assert len(msgs[-1]["images"]) == 2
     assert any(m["type"] == "progress" for m in msgs)
     values = [m["value"] for m in msgs if m["type"] == "progress"]
-    assert values[-1] == 1.0
+    assert 1.0 in values  # generation fills the bar to 100%
     stages = [m["stage"] for m in msgs
               if m["type"] == "progress" and m.get("stage")]
+    assert "Decoding images" in stages       # emitted when the bar hits 100%
     assert "Post-processing 0/2" in stages
     assert "Post-processing 2/2" in stages
 
@@ -122,6 +124,26 @@ def test_instruct_roundtrip_with_stage(server_thread):
     assert len(msgs[-1]["images"]) == 1
     stages = [m.get("stage") for m in msgs if m["type"] == "progress"]
     assert any(s and "Loading" in s for s in stages)
+
+
+def test_generate_background_keep_stays_opaque(server_thread):
+    """background=keep skips removal of the flat red fake image."""
+    async def go():
+        async with websockets.connect(f"ws://{HOST}:{PORT}",
+                                      max_size=64 * 2**20) as ws:
+            await ws.send(json.dumps({
+                "id": "bk1", "mode": "generate", "prompt": "sword",
+                "target_size": [8, 8], "variants": 1, "frames": [],
+                "background": "keep",
+            }))
+            while True:
+                msg = json.loads(await ws.recv())
+                if msg["type"] in ("result", "error"):
+                    return msg
+    msg = asyncio.run(go())
+    assert msg["type"] == "result"
+    final = image_from_b64(msg["images"][0])
+    assert (np.asarray(final)[:, :, 3] == 255).all()
 
 
 def test_edit_crops_small_subject_to_fill_frame(server_thread):
