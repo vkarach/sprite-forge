@@ -143,6 +143,40 @@ local function exportMask()
   return b64.encode(readFile(p))
 end
 
+-- Checkerboard drawn as one cached Image blit: painting it with per-square
+-- fillRect cost thousands of calls per repaint and lagged the scroll.
+local checkerImg
+local function drawChecker(gc, dx, dy, dw, dh)
+  if not checkerImg then
+    local tile = Image(16, 16, ColorMode.RGB)
+    local light = app.pixelColor.rgba(190, 190, 190)
+    local dark = app.pixelColor.rgba(150, 150, 150)
+    for y = 0, 15 do
+      for x = 0, 15 do
+        tile:putPixel(x, y, ((x // 8 + y // 8) % 2 == 0) and light or dark)
+      end
+    end
+    checkerImg = Image(640, 512, ColorMode.RGB)
+    for y = 0, 511, 16 do
+      for x = 0, 639, 16 do
+        checkerImg:drawImage(tile, Point(x, y))
+      end
+    end
+  end
+  local x = 0
+  while x < dw do
+    local w = math.min(640, dw - x)
+    local y = 0
+    while y < dh do
+      local h = math.min(512, dh - y)
+      gc:drawImage(checkerImg, Rectangle(0, 0, w, h),
+                   Rectangle(dx + x, dy + y, w, h))
+      y = y + h
+    end
+    x = x + w
+  end
+end
+
 -- Server images arrive as raw RGBA bytes and become an in-memory Image.
 -- No temp PNG + Image{fromFile}: that spammed Aseprite's Recent Files.
 local function imageFromPayload(spec, n)
@@ -217,17 +251,7 @@ local function showResults(imgs, onInserted)
         local dx, dy = c * cw + 3, r * ch + 3
         local dw, dh = math.floor(iw * scale), math.floor(ih * scale)
         -- Checkerboard behind each variant so transparency reads clearly.
-        for qy = 0, dh - 1, 8 do
-          for qx = 0, dw - 1, 8 do
-            if ((qx + qy) // 8) % 2 == 0 then
-              gc.color = Color{ r = 190, g = 190, b = 190 }
-            else
-              gc.color = Color{ r = 150, g = 150, b = 150 }
-            end
-            gc:fillRect(Rectangle(dx + qx, dy + qy,
-              math.min(8, dw - qx), math.min(8, dh - qy)))
-          end
-        end
+        drawChecker(gc, dx, dy, dw, dh)
         gc:drawImage(img, Rectangle(0, 0, iw, ih),
           Rectangle(dx, dy, dw, dh))
         if inserted[n] then
@@ -329,17 +353,7 @@ local function showRun(offset)
         local r = math.floor((n - 1) / cols)
         local dx, dy = c * cw + 3, HEAD + r * ch + 3
         local dw, dh = math.floor(iw * scale), math.floor(ih * scale)
-        for qy = 0, dh - 1, 8 do
-          for qx = 0, dw - 1, 8 do
-            if ((qx + qy) // 8) % 2 == 0 then
-              gc.color = Color{ r = 190, g = 190, b = 190 }
-            else
-              gc.color = Color{ r = 150, g = 150, b = 150 }
-            end
-            gc:fillRect(Rectangle(dx + qx, dy + qy,
-              math.min(8, dw - qx), math.min(8, dh - qy)))
-          end
-        end
+        drawChecker(gc, dx, dy, dw, dh)
         gc:drawImage(img, Rectangle(0, 0, iw, ih),
                      Rectangle(dx, dy, dw, dh))
         if inserted[n] then
@@ -442,15 +456,7 @@ showHistory = function()
     local dw = math.max(1, math.floor(img.width * s))
     local dh = math.max(1, math.floor(img.height * s))
     local dx, dy = bx + (bw - dw) // 2, by + (bh - dh) // 2
-    for qy = 0, dh - 1, 8 do
-      for qx = 0, dw - 1, 8 do
-        gc.color = ((qx + qy) // 8) % 2 == 0
-          and Color{ r = 190, g = 190, b = 190 }
-          or Color{ r = 150, g = 150, b = 150 }
-        gc:fillRect(Rectangle(dx + qx, dy + qy,
-          math.min(8, dw - qx), math.min(8, dh - qy)))
-      end
-    end
+    drawChecker(gc, dx, dy, dw, dh)
     gc:drawImage(img, Rectangle(0, 0, img.width, img.height),
                  Rectangle(dx, dy, dw, dh))
   end
