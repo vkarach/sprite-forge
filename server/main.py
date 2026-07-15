@@ -91,20 +91,13 @@ def _register_default_models():
         return p
 
     def klein():
-        from server.instruct import InstructPipeline
-        p = InstructPipeline()
-        p.load()
-        return p
-
-    def klein_t2i():
-        from server.instruct import KleinT2I
-        p = KleinT2I()
+        from server.instruct import KleinPipeline
+        p = KleinPipeline()
         p.load()
         return p
 
     models.register("sdxl", sdxl)
     models.register("klein", klein)
-    models.register("klein_t2i", klein_t2i)
 
 
 def _run(req, on_progress, on_stage):
@@ -125,7 +118,7 @@ def _run(req, on_progress, on_stage):
         palette_src = req.frames[0].image
     elif req.mode == "generate":
         # Klein follows detailed prose prompts; SDXL+LoRA only handles tags
-        pipe = models.get("klein_t2i", on_stage=on_stage)
+        pipe = models.get("klein", on_stage=on_stage)
         on_stage("Preparing prompt")  # text encode runs before step ticks
         raw = pipe.txt2img(req.prompt, req.target_size,
                            variants=req.variants, on_progress=gen_progress)

@@ -41,8 +41,8 @@ def main():
     progress = lambda v: print(f"\r{v:4.0%}", end="")
     t0 = time.time()
     if args.instruct and args.edit:
-        from server.instruct import InstructPipeline
-        ipipe = InstructPipeline()
+        from server.instruct import KleinPipeline
+        ipipe = KleinPipeline()
         t0 = time.time()
         ipipe.load()
         print(f"instruct model loaded in {time.time() - t0:.1f}s", flush=True)

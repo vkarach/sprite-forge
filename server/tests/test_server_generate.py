@@ -12,15 +12,6 @@ from server.protocol import image_to_b64, image_from_raw
 HOST, PORT = "127.0.0.1", 8798
 
 
-class FakeT2I:
-    def txt2img(self, prompt, target_size, variants=4, on_progress=None):
-        if on_progress:
-            on_progress(0.5)
-            on_progress(1.0)
-        return [Image.new("RGBA", (1024, 1024), (255, 0, 0, 255))
-                for _ in range(variants)]
-
-
 class FakePipeline:
     def img2img(self, prompt, image, strength=0.6, variants=4,
                 on_progress=None):
@@ -30,7 +21,14 @@ class FakePipeline:
         return [image.resize((1024, 1024))] * variants
 
 
-class FakeInstruct:
+class FakeKlein:  # one model serves both t2i and instruct, like the real one
+    def txt2img(self, prompt, target_size, variants=4, on_progress=None):
+        if on_progress:
+            on_progress(0.5)
+            on_progress(1.0)
+        return [Image.new("RGBA", (1024, 1024), (255, 0, 0, 255))
+                for _ in range(variants)]
+
     def edit_by_instruction(self, instruction, image, variants=4,
                             on_progress=None):
         return [image.resize((1024, 1024))] * variants
@@ -41,8 +39,7 @@ def server_thread(monkeypatch):
     from server import models
     models.reset()
     models.register("sdxl", FakePipeline)
-    models.register("klein", FakeInstruct)
-    models.register("klein_t2i", FakeT2I)
+    models.register("klein", FakeKlein)
     monkeypatch.setattr(srv, "DEBUG_SAVE", False)  # keep output/ real-only
     loop = asyncio.new_event_loop()
     stop = loop.create_future()
