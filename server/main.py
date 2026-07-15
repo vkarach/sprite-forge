@@ -66,8 +66,15 @@ def _register_default_models():
         p.load()
         return p
 
+    def klein_t2i():
+        from server.instruct import KleinT2I
+        p = KleinT2I()
+        p.load()
+        return p
+
     models.register("sdxl", sdxl)
     models.register("klein", klein)
+    models.register("klein_t2i", klein_t2i)
 
 
 def _run(req, on_progress, on_stage):
@@ -86,13 +93,15 @@ def _run(req, on_progress, on_stage):
                                        variants=req.variants,
                                        on_progress=gen_progress)
         palette_src = req.frames[0].image
+    elif req.mode == "generate":
+        # Klein follows detailed prose prompts; SDXL+LoRA only handles tags
+        pipe = models.get("klein_t2i", on_stage=on_stage)
+        raw = pipe.txt2img(req.prompt, req.target_size,
+                           variants=req.variants, on_progress=gen_progress)
+        palette_src = None
     else:
         pipe = models.get("sdxl", on_stage=on_stage)
-        if req.mode == "generate":
-            raw = pipe.txt2img(req.prompt, variants=req.variants,
-                               on_progress=gen_progress)
-            palette_src = None
-        elif req.mode == "edit":
+        if req.mode == "edit":
             raw = pipe.img2img(req.prompt, req.frames[0].image,
                                strength=req.strength, variants=req.variants,
                                on_progress=gen_progress)

@@ -14,7 +14,8 @@ local D = {}
 local last = { mode = "Generate", prompt = "", w = nil, h = nil,
                strength = 60, variants = 4, background = "Auto",
                view = "Side view (right)", subject = "character",
-               instruction = "", symmetry = false }
+               instruction = "", symmetry = false,
+               genView = "3/4 view", genSubject = "", genDetails = "" }
 
 local BG_KEY = { ["Auto"] = "auto", ["Remove"] = "remove",
                  ["Keep"] = "keep" }
@@ -35,6 +36,35 @@ local PRESETS = {  -- %s = the subject; smoke-tested: naming the subject
 }
 local PRESET_ORDER = { "Side view (right)", "Side view (left)", "Back view",
                        "Front view", "3/4 view", "Custom (text only)" }
+
+-- Generate runs on Klein, which reads full prose: templates spell out the
+-- camera angle explicitly (a bare "side view" tag is not enough).
+local GEN_TEMPLATES = {
+  ["Side view"] = "A %s, seen exactly from the side at eye level, in strict"
+    .. " profile view: only its side silhouette is visible, the front face"
+    .. " cannot be seen at all. A flat 2D side-scroller game object. The"
+    .. " camera does not look down at it.",
+  ["Front view"] = "A %s, seen straight from the front at eye level,"
+    .. " head-on, perfectly centered.",
+  ["3/4 view"] = "A %s in classic three-quarter view game perspective, seen"
+    .. " from slightly above.",
+  ["Top-down"] = "A %s seen directly from above, flat top-down game view.",
+  ["Custom (text only)"] = "",
+}
+local GEN_VIEW_ORDER = { "3/4 view", "Side view", "Front view", "Top-down",
+                         "Custom (text only)" }
+
+-- Assemble the Generate prompt exactly as it will be sent; nil when empty.
+local function assembleGenPrompt(view, subject, extra)
+  local tpl = GEN_TEMPLATES[view] or ""
+  if subject == "" then return nil end
+  if tpl == "" then
+    return extra ~= "" and (subject .. ", " .. extra) or subject
+  end
+  local text = string.format(tpl, subject)
+  if extra ~= "" then text = text .. " " .. extra end
+  return text
+end
 
 -- Assemble the instruction exactly as it will be sent; nil when empty.
 local function assembleInstruction(viewPreset, subject, extra)
@@ -276,7 +306,13 @@ function D.open()
     local spr = app.sprite
     local reqs = {}
     if m == "Generate" then
-      reqs[1] = { d.prompt ~= "", "Prompt describes what to generate" }
+      local text = assembleGenPrompt(d.genView, d.genSubject, d.genDetails)
+      if text then
+        if #text > 34 then text = text:sub(1, 34) .. "..." end
+        reqs[1] = { true, 'Will send: "' .. text .. '"' }
+      else
+        reqs[1] = { false, "Subject describes what to generate" }
+      end
     elseif m == "Edit with AI" then
       reqs[1] = { spr ~= nil, "A sprite is open" }
       reqs[2] = { d.prompt ~= "", "Prompt describes the change" }
@@ -325,7 +361,11 @@ function D.open()
     dlg:modify{ id = "w", visible = m == "Generate" }
     dlg:modify{ id = "h", visible = m == "Generate" }
     dlg:modify{ id = "strength", visible = m == "Edit with AI" }
-    dlg:modify{ id = "prompt", visible = not instruct }
+    dlg:modify{ id = "genView", visible = m == "Generate" }
+    dlg:modify{ id = "genSubject", visible = m == "Generate" }
+    dlg:modify{ id = "genDetails", visible = m == "Generate" }
+    dlg:modify{ id = "prompt",
+                visible = m == "Edit with AI" or m == "Inpaint Selection" }
     dlg:modify{ id = "viewPreset", visible = instruct }
     dlg:modify{ id = "subject", visible = instruct }
     dlg:modify{ id = "instruction", visible = instruct }
@@ -366,11 +406,14 @@ function D.open()
       payload.target_size = { spr.width, spr.height }
       payload.frames = { { image = exportFrame() } }
     elseif mode == "generate" then
-      if d.prompt == "" then
-        setState("error", "Prompt is empty.")
+      local text = assembleGenPrompt(d.genView, d.genSubject, d.genDetails)
+      if not text then
+        setState("error", "Subject is empty.")
         return
       end
-      payload.prompt = d.prompt
+      last.genView = d.genView; last.genSubject = d.genSubject
+      last.genDetails = d.genDetails
+      payload.prompt = text
       payload.target_size = { d.w, d.h }
     else
       if d.prompt == "" then
@@ -449,9 +492,18 @@ function D.open()
                 options = { "Generate", "Edit with AI", "Inpaint Selection",
                             "Rotate / Instruct" },
                 onchange = applyModeVisibility }
-  dlg:entry{ id = "prompt", label = "Prompt:", text = last.prompt,
+  dlg:combobox{ id = "genView", label = "View:", option = last.genView,
+                options = GEN_VIEW_ORDER, onchange = updateHint,
+                visible = last.mode == "Generate" }
+  dlg:entry{ id = "genSubject", label = "Subject:", text = last.genSubject,
              focus = true, onchange = updateHint,
-             visible = last.mode ~= "Rotate / Instruct" }
+             visible = last.mode == "Generate" }
+  dlg:entry{ id = "genDetails", label = "Extra:", text = last.genDetails,
+             onchange = updateHint, visible = last.mode == "Generate" }
+  dlg:entry{ id = "prompt", label = "Prompt:", text = last.prompt,
+             onchange = updateHint,
+             visible = last.mode == "Edit with AI"
+                       or last.mode == "Inpaint Selection" }
   dlg:combobox{ id = "viewPreset", label = "View:", option = last.view,
                 options = PRESET_ORDER, onchange = updateHint,
                 visible = last.mode == "Rotate / Instruct" }

@@ -31,10 +31,15 @@ on its first use; switching between tasks that need different models takes
    Rotate + Instruct), fill the fields, press Run. Results open in a
    separate window; click a variant to insert it as a new layer. Your
    pixels are never modified.
-3. The **Background** option controls transparency: Auto detects and strips
+3. Generate runs on FLUX.2 Klein, which understands full sentences: pick a
+   **View** preset, name the **Subject** ("closed book with dark brown
+   leather cover"), add **Extra** details if needed — the panel shows the
+   exact text it will send. "Custom (text only)" sends your subject text
+   as-is. Needs ~16 GB of system RAM while generating (CPU offload).
+4. The **Background** option controls transparency: Auto detects and strips
    a uniform background, Remove strips the dominant border color even when
    detection is unsure, Keep leaves the image fully opaque.
-4. Rotate / Instruct tips: name the subject explicitly (e.g.
+5. Rotate / Instruct tips: name the subject explicitly (e.g.
    "four-legged brown horse" — a generic "character" mutates it), use the
    Extra field for refinements, and enable Mirror symmetry for front/back
    views.
