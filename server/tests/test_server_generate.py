@@ -197,17 +197,22 @@ def test_history_pages_newest_first(server_thread, monkeypatch, tmp_path):
             {"mode": "generate", "prompt": prompt}), encoding="utf-8")
     monkeypatch.setattr(srv, "DEBUG_DIR", tmp_path)
 
-    async def go():
+    async def go(payload):
         async with websockets.connect(f"ws://{HOST}:{PORT}",
                                       max_size=64 * 2**20) as ws:
-            await ws.send(json.dumps({"type": "history", "offset": 0,
-                                      "limit": 1}))
+            await ws.send(json.dumps(payload))
             return json.loads(await ws.recv())
-    msg = asyncio.run(go())
+    msg = asyncio.run(go({"type": "history", "offset": 0, "limit": 1}))
     assert msg["type"] == "history" and msg["total"] == 2
     assert msg["runs"][0]["prompt"] == "new book"  # newest first
+    assert msg["runs"][0]["count"] == 1
     img = image_from_b64(msg["runs"][0]["images"][0])
     assert img.size == (8, 8)
+
+    msg = asyncio.run(go({"type": "history", "offset": 0, "limit": 5,
+                          "preview": True}))
+    assert len(msg["runs"]) == 2
+    assert all(len(r["images"]) == 1 for r in msg["runs"])
 
 
 def test_t2i_size_matches_target_aspect():

@@ -254,19 +254,20 @@ local function showResults(imgs, onInserted)
   app.refresh()
 end
 
--- History window: pages through past runs (newest first), one run per page.
-local function showHistory()
-  local idx, total = 0, 0
+local showHistory  -- forward declaration: showRun's Back button reopens it
+
+-- One past run: grid of its variants, click to insert (like Results).
+local function showRun(offset)
   local run, imgs, inserted = nil, {}, {}
-  local status = "Loading history..."
+  local status = "Loading run..."
   local CW, HEAD = 600, 34
   local CH = 360 + HEAD
 
-  local dlg = Dialog("SpriteForge - History (click to insert / remove)")
+  local dlg = Dialog("SpriteForge - History run (click to insert / remove)")
 
   local function grid()
     local count = #imgs
-    if count == 0 then return 1, 1, 0, 0, 1 end
+    if count == 0 then return 1, 1, 1, 1, 1 end
     local iw, ih = imgs[1].width, imgs[1].height
     local cols = (count <= 2) and count or ((count <= 4) and 2 or 4)
     local rows = math.ceil(count / cols)
@@ -276,31 +277,21 @@ local function showHistory()
            math.floor(ih * scale) + 6, scale
   end
 
-  local function fetch(i)
-    status = "Loading history..."
-    run, imgs, inserted = nil, {}, {}
-    dlg:repaint()
-    client.history(i, 1, function(msg)
-      total = msg.total
-      idx = i
-      run = msg.runs[1]
-      if run then
-        for n, s in ipairs(run.images) do
-          imgs[n] = imageFromB64(s, "h" .. n)
-        end
-        status = nil
-      else
-        status = (total == 0) and "History is empty."
-                 or "This run has no images."
+  client.history(offset, 1, false, function(msg)
+    run = msg.runs[1]
+    if run then
+      for n, s in ipairs(run.images) do
+        imgs[n] = imageFromB64(s, "h" .. n)
       end
-      dlg:modify{ id = "older", enabled = idx + 1 < total }
-      dlg:modify{ id = "newer", enabled = idx > 0 }
-      dlg:repaint()
-    end, function(err)
-      status = err
-      dlg:repaint()
-    end)
-  end
+      status = nil
+    else
+      status = "This run has no images."
+    end
+    dlg:repaint()
+  end, function(err)
+    status = err
+    dlg:repaint()
+  end)
 
   dlg:canvas{
     id = "hgrid", width = CW, height = CH,
@@ -315,18 +306,16 @@ local function showHistory()
         gc:fillText(status, 8, 8)
         return
       end
-      -- header: "3/12  generate  2026-07-15 20:46" + prompt
       local y4, mo, dd, hh, mi = run.name:match(
         "^(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)")
       local when = y4 and string.format("%s-%s-%s %s:%s",
                                         y4, mo, dd, hh, mi) or ""
-      gc:fillText(string.format("%d/%d   %s   %s",
-                                idx + 1, total, run.mode, when), 8, 4)
+      gc:fillText(run.mode .. "   " .. when, 8, 4)
       local prompt = run.prompt
       if #prompt > 92 then prompt = prompt:sub(1, 92) .. "..." end
       gc.color = shade(text, 0.75)
       gc:fillText(prompt, 8, 18)
-      local cols, rows, cw, ch, scale = grid()
+      local cols, _, cw, ch, scale = grid()
       local iw, ih = imgs[1].width, imgs[1].height
       for n, img in ipairs(imgs) do
         local c = (n - 1) % cols
@@ -357,7 +346,7 @@ local function showHistory()
     end,
     onmouseup = function(ev)
       if status then return end
-      local cols, rows, cw, ch = grid()
+      local cols, _, cw, ch = grid()
       local c = math.floor(ev.x / cw)
       local r = math.floor((ev.y - HEAD) / ch)
       if c < 0 or c >= cols or r < 0 then return end
@@ -372,12 +361,122 @@ local function showHistory()
       dlg:repaint()
     end,
   }
-  dlg:button{ id = "older", text = "< Older", enabled = false,
-              onclick = function() fetch(idx + 1) end }
-  dlg:button{ id = "newer", text = "Newer >", enabled = false,
-              onclick = function() fetch(idx - 1) end }
+  dlg:button{ text = "< Back", onclick = function()
+    dlg:close()
+    showHistory()
+  end }
   dlg:button{ text = "Close" }
-  fetch(0)
+  dlg:show{ wait = true }
+  app.refresh()
+end
+
+-- History window: scrollable list of past runs (newest first) with
+-- thumbnails; mouse wheel scrolls, click opens the run.
+showHistory = function()
+  local rows = nil          -- {name, mode, prompt, count, images={b64}}
+  local thumbs = {}         -- decoded lazily per visible row
+  local scroll = 0
+  local status = "Loading history..."
+  local ROWH, LISTW, VIS = 56, 600, 7
+  local LISTH = ROWH * VIS
+
+  local dlg = Dialog("SpriteForge - History (scroll, click a run)")
+
+  local function maxScroll()
+    return rows and math.max(0, #rows - VIS) or 0
+  end
+
+  client.history(0, 500, true, function(msg)
+    rows = msg.runs
+    status = (#rows == 0) and "History is empty." or nil
+    dlg:repaint()
+  end, function(err)
+    status = err
+    dlg:repaint()
+  end)
+
+  dlg:canvas{
+    id = "hlist", width = LISTW, height = LISTH,
+    onpaint = function(ev)
+      local gc = ev.context
+      local face = themeColor("window_face", Color{ r = 200, g = 200, b = 200 })
+      local text = themeColor("text", Color{ r = 40, g = 40, b = 40 })
+      gc.color = face
+      gc:fillRect(Rectangle(0, 0, LISTW, LISTH))
+      if status then
+        gc.color = text
+        gc:fillText(status, 8, 8)
+        return
+      end
+      for v = 1, VIS do
+        local i = scroll + v
+        local run = rows[i]
+        if not run then break end
+        local y = (v - 1) * ROWH
+        gc.color = shade(face, (v % 2 == 0) and 0.97 or 0.93)
+        gc:fillRect(Rectangle(0, y, LISTW, ROWH))
+        -- thumbnail on a checkerboard
+        thumbs[i] = thumbs[i] or imageFromB64(run.images[1], "t" .. i)
+        local img = thumbs[i]
+        local box = ROWH - 8
+        local s = math.min(box / img.width, box / img.height)
+        local dw = math.max(1, math.floor(img.width * s))
+        local dh = math.max(1, math.floor(img.height * s))
+        local dx, dy = 4 + (box - dw) // 2, y + 4 + (box - dh) // 2
+        for qy = 0, dh - 1, 8 do
+          for qx = 0, dw - 1, 8 do
+            gc.color = ((qx + qy) // 8) % 2 == 0
+              and Color{ r = 190, g = 190, b = 190 }
+              or Color{ r = 150, g = 150, b = 150 }
+            gc:fillRect(Rectangle(dx + qx, dy + qy,
+              math.min(8, dw - qx), math.min(8, dh - qy)))
+          end
+        end
+        gc:drawImage(img, Rectangle(0, 0, img.width, img.height),
+                     Rectangle(dx, dy, dw, dh))
+        -- two text lines: prompt, then mode/date/variant count
+        local prompt = run.prompt
+        if #prompt > 80 then prompt = prompt:sub(1, 80) .. "..." end
+        gc.color = text
+        gc:fillText(prompt, ROWH + 6, y + 10)
+        local y4, mo, dd, hh, mi = run.name:match(
+          "^(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)")
+        local when = y4 and string.format("%s-%s-%s %s:%s",
+                                          y4, mo, dd, hh, mi) or ""
+        gc.color = shade(text, 0.65)
+        gc:fillText(string.format("%s   %s   %d variant%s", run.mode, when,
+                                  run.count, run.count == 1 and "" or "s"),
+                    ROWH + 6, y + 28)
+      end
+      -- scrollbar
+      if #rows > VIS then
+        local barH = math.max(16, math.floor(LISTH * VIS / #rows))
+        local barY = math.floor((LISTH - barH) * scroll / maxScroll())
+        gc.color = shade(face, 0.80)
+        gc:fillRect(Rectangle(LISTW - 5, 0, 5, LISTH))
+        gc.color = shade(face, 0.55)
+        gc:fillRect(Rectangle(LISTW - 5, barY, 5, barH))
+      end
+    end,
+    onwheel = function(ev)
+      if not rows then return end
+      local step = (ev.deltaY > 0) and 2 or -2
+      local s = math.max(0, math.min(maxScroll(), scroll + step))
+      if s ~= scroll then
+        scroll = s
+        dlg:repaint()
+      end
+    end,
+    onmouseup = function(ev)
+      if not rows then return end
+      local i = scroll + math.floor(ev.y / ROWH) + 1
+      if rows[i] then
+        dlg:close()
+        showRun(rows[i].offset)
+      end
+    end,
+  }
+  dlg:button{ text = "Close" }
   dlg:show{ wait = true }
   app.refresh()
 end

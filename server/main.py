@@ -52,24 +52,30 @@ def _save_debug(req, raw_images, final_images):
         log.exception("debug save failed")  # never break generation over this
 
 
-def _history_msg(offset, limit):
-    """Page of past runs, newest first: folder names sort by timestamp."""
+def _history_msg(offset, limit, preview=False):
+    """Page of past runs, newest first: folder names sort by timestamp.
+    preview=True sends only the first image of each run (list thumbnails)."""
     import base64
     folders = sorted((p for p in DEBUG_DIR.iterdir() if p.is_dir()),
                      key=lambda p: p.name, reverse=True) \
         if DEBUG_DIR.exists() else []
     runs = []
-    for folder in folders[offset:offset + max(limit, 0)]:
+    for pos, folder in enumerate(folders[offset:offset + max(limit, 0)],
+                                 start=offset):
         try:
             meta = json.loads((folder / "settings.json").read_text("utf-8"))
         except (OSError, json.JSONDecodeError):
             meta = {}
+        files = sorted(folder.glob("final_*.png"))
         images = [base64.b64encode(f.read_bytes()).decode("ascii")
-                  for f in sorted(folder.glob("final_*.png"))]
+                  for f in (files[:1] if preview else files)]
         if images:
-            runs.append({"name": folder.name,
+            # offset = absolute folder index: runs without images are
+            # skipped, so a list position is not a valid server offset
+            runs.append({"name": folder.name, "offset": pos,
                          "mode": meta.get("mode", "?"),
                          "prompt": meta.get("prompt", ""),
+                         "count": len(files),
                          "images": images})
     return json.dumps({"type": "history", "total": len(folders),
                        "offset": offset, "runs": runs})
@@ -203,7 +209,8 @@ async def _handler(ws):
                 continue
             if isinstance(data, dict) and data.get("type") == "history":
                 await ws.send(_history_msg(int(data.get("offset", 0)),
-                                           int(data.get("limit", 1))))
+                                           int(data.get("limit", 1)),
+                                           bool(data.get("preview"))))
                 continue
         except (json.JSONDecodeError, ValueError, TypeError):
             pass  # fall through to parse_request for a proper error

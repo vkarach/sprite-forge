@@ -60,8 +60,9 @@ function M.request(payload, callbacks)
   return { cancel = finish }
 end
 
--- Fetch one page of past runs: onOk(msg) with msg.total and msg.runs.
-function M.history(offset, limit, onOk, onFail)
+-- Fetch past runs: onOk(msg) with msg.total and msg.runs.
+-- preview=true returns only the first image of each run (list thumbnails).
+function M.history(offset, limit, preview, onOk, onFail)
   local ws
   local timer
   local done = false
@@ -72,7 +73,7 @@ function M.history(offset, limit, onOk, onFail)
       if mt == WebSocketMessageType.OPEN then
         if timer then timer:stop() end
         ws:sendText(json.encode({ type = "history", offset = offset,
-                                  limit = limit }))
+                                  limit = limit, preview = preview }))
       elseif mt == WebSocketMessageType.TEXT then
         done = true; ws:close()
         local ok, msg = pcall(json.decode, data)
