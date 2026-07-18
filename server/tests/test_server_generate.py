@@ -51,6 +51,34 @@ def server_thread(monkeypatch):
     models.reset()
 
 
+def test_preload_loads_klein_before_any_request():
+    import time
+    from server import models
+    models.reset()
+    models.register("klein", FakeKlein)
+    loop = asyncio.new_event_loop()
+    stop = loop.create_future()
+    ready = threading.Event()
+
+    def run():
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(srv.serve(HOST, PORT + 1, stop,
+                                          on_ready=ready.set, preload=True))
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    assert ready.wait(5)
+    try:
+        deadline = time.time() + 5  # preload runs in the GPU worker thread
+        while models._resident_name != "klein" and time.time() < deadline:
+            time.sleep(0.01)
+        assert models._resident_name == "klein"
+    finally:
+        loop.call_soon_threadsafe(stop.set_result, None)
+        t.join(timeout=5)
+        models.reset()
+
+
 def test_generate_returns_progress_then_result(server_thread):
     async def go():
         async with websockets.connect(f"ws://{HOST}:{PORT}",

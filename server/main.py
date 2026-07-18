@@ -112,7 +112,6 @@ def _run(req, on_progress, on_stage):
                                        on_progress=gen_progress)
         palette_src = req.frames[0].image
     elif req.mode == "generate":
-        # Klein follows detailed prose prompts; SDXL+LoRA only handles tags
         pipe = models.get("klein", on_stage=on_stage)
         on_stage("Preparing prompt")  # text encode runs before step ticks
         raw = pipe.txt2img(req.prompt, req.target_size,
@@ -215,9 +214,23 @@ async def _handler(ws):
                 log.debug("client gone before error could be delivered")
 
 
-async def serve(host="127.0.0.1", port=8765, stop=None, on_ready=None):
+def _preload_klein():
+    """Warm the model in the GPU worker at startup instead of on the first
+    prompt. A request arriving mid-load queues behind it, same as before."""
+    def done(f):
+        if f.exception():
+            log.error("klein preload failed: %r", f.exception())
+        else:
+            log.info("klein preloaded, ready for prompts")
+    _gpu_executor.submit(models.get, "klein").add_done_callback(done)
+
+
+async def serve(host="127.0.0.1", port=8765, stop=None, on_ready=None,
+                preload=False):
     if not models._factories:
         _register_default_models()
+    if preload:
+        _preload_klein()
     # no keepalive pings: GIL-heavy generation starves the loop and the 20s
     # ping timeout used to kill the socket mid-job (localhost: TCP close is
     # enough to detect a dead client)
@@ -234,6 +247,6 @@ if __name__ == "__main__":
     # The panel pings every 10s; websockets logs every open/close at INFO.
     logging.getLogger("websockets").setLevel(logging.WARNING)
     try:
-        asyncio.run(serve())
+        asyncio.run(serve(preload=True))
     except KeyboardInterrupt:
         log.info("SpriteForge server stopped. Bye.")

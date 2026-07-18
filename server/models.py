@@ -1,7 +1,7 @@
 """VRAM model manager: at most ONE model resident at a time.
 
-SDXL (~8 GB) and Klein (~13 GB peak) do not fit a 16 GB card together, so
-every pipeline is obtained through get(); switching names unloads the old
+Klein (~13 GB peak) nearly fills a 16 GB card on its own, so every
+pipeline is obtained through get(); switching names unloads the old
 pipeline before loading the new one. Runs inside the single GPU worker
 thread, so swaps serialize with generation.
 """
