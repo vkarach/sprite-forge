@@ -184,9 +184,11 @@ async def handle_request(ws, req):
         if getattr(ws, "close_code", None) is not None:
             raise JobCancelled()
         f = asyncio.run_coroutine_threadsafe(ws.send(msg), loop)
-        # Wait for the actual send: the CPU-offload pipeline hogs the GIL so
-        # hard the loop otherwise flushes progress in per-variant bursts.
-        # Waiting also guarantees ordering before the final result message.
+        # Wait for the send: blocking here hands the GIL to the loop, which
+        # delivers progress sooner than fire-and-forget. Measured over a
+        # GIL-bound worker, dropping the wait was never faster and up to 2x
+        # slower end to end. (Ordering is NOT the reason - it holds either
+        # way: websockets sends in schedule order.)
         try:
             f.result(5)
         except Exception as e:
