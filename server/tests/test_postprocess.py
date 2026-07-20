@@ -1,6 +1,7 @@
+import numpy as np
 from PIL import Image
 from server.postprocess import (
-    crop_to_subject, downscale, extract_palette, fit_into, sprite_palette,
+    crop_to_subject, downscale, fit_into, sprite_palette,
     snap_to_palette, subject_palette, remove_background,
 )
 
@@ -126,12 +127,11 @@ def test_sprite_palette_none_when_too_many():
     assert sprite_palette(img, limit=64) is None
 
 
-def test_extract_palette_limits_colors():
+def test_subject_palette_limits_colors():
     img = Image.new("RGBA", (8, 8), (200, 30, 30, 255))
     for x in range(8):
         img.putpixel((x, 0), (20, 200, 20, 255))
-    pal = extract_palette(img, max_colors=2)
-    assert len(pal) <= 2
+    assert len(subject_palette(img, max_colors=2)) <= 2
 
 
 def test_downscale_with_palette_keeps_thin_outline_colors():
@@ -202,6 +202,18 @@ def test_remove_background():
         for y in range(2, 4):
             img.putpixel((x, y), (255, 0, 0, 255))
     out = remove_background(img)
+    assert out.getpixel((0, 0))[3] == 0
+    assert out.getpixel((2, 2)) == (255, 0, 0, 255)
+
+
+def test_remove_background_on_pure_black():
+    # black bg has no chromaticity ray; the shade pass must not divide by zero
+    img = Image.new("RGBA", (6, 6), (0, 0, 0, 255))
+    for x in range(2, 4):
+        for y in range(2, 4):
+            img.putpixel((x, y), (255, 0, 0, 255))
+    with np.errstate(invalid="raise", divide="raise"):
+        out = remove_background(img)
     assert out.getpixel((0, 0))[3] == 0
     assert out.getpixel((2, 2)) == (255, 0, 0, 255)
 

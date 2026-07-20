@@ -194,7 +194,7 @@ def test_edit_crops_small_subject_to_fill_frame(server_thread):
                                       max_size=64 * 2**20) as ws:
             await ws.send(json.dumps({
                 "id": "boat", "mode": "edit", "prompt": "make a boat",
-                "target_size": [64, 64], "variants": 1, "strength": 0.9,
+                "target_size": [64, 64], "variants": 1,
                 "frames": [{"image": image_to_b64(src), "mask": None}],
             }))
             while True:

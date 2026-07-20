@@ -55,11 +55,10 @@ def downscale(img: Image.Image, target_size: tuple[int, int],
     return Image.fromarray(out.reshape(th, tw, 4), "RGBA")
 
 
-def extract_palette(img: Image.Image, max_colors: int = 16) -> list[tuple[int, int, int]]:
-    """Median-cut palette of an AI-generated image."""
-    q = img.convert("RGB").quantize(colors=max_colors)
+def _used_colors(q: Image.Image, max_colors: int) -> list[tuple[int, int, int]]:
+    """RGB of the palette entries a quantized image actually uses."""
     raw = q.getpalette()[: max_colors * 3]
-    used = sorted(set(q.getdata()))
+    used = sorted(set(np.asarray(q).ravel().tolist()))
     return [tuple(raw[i * 3: i * 3 + 3]) for i in used]
 
 
@@ -114,10 +113,7 @@ def subject_palette(img: Image.Image, max_colors: int = 16) -> list[tuple[int, i
     if len(opaque) == 0:
         return [(0, 0, 0)]
     strip = Image.fromarray(opaque.reshape(1, -1, 3), "RGB")
-    q = strip.quantize(colors=max_colors)
-    raw = q.getpalette()[: max_colors * 3]
-    used = sorted(set(q.getdata()))
-    return [tuple(raw[i * 3: i * 3 + 3]) for i in used]
+    return _used_colors(strip.quantize(colors=max_colors), max_colors)
 
 
 def sprite_palette(img: Image.Image, limit: int = 64) -> list[tuple[int, int, int]] | None:
@@ -213,9 +209,13 @@ def remove_background(img: Image.Image, tolerance: int = 12,
     # enclosed pockets and anything behind an outline stay
     rgbf = arr[:, :, :3].astype(np.float64)
     bgf = bg.astype(np.float64)
-    s = (rgbf @ bgf) / (bgf @ bgf)
-    shade = (np.abs(rgbf - s[..., None] * bgf).max(axis=2) <= tolerance) \
-        & (s >= 0.25) & (s <= 1.15)
+    norm = bgf @ bgf
+    if norm == 0:  # black has no chromaticity ray; only black is its shade
+        shade = rgbf.max(axis=2) <= tolerance
+    else:
+        s = (rgbf @ bgf) / norm
+        shade = (np.abs(rgbf - s[..., None] * bgf).max(axis=2) <= tolerance) \
+            & (s >= 0.25) & (s <= 1.15)
 
     k = 5 if min(h, w) >= 128 else 3
     for _ in range(2):  # dropping a strip can expose/isolate more debris

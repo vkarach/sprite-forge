@@ -45,7 +45,7 @@ def _save_debug(req, raw_images, final_images):
         for n, img in enumerate(final_images):
             img.save(folder / f"final_{n}.png")
         meta = {"mode": req.mode, "prompt": req.prompt,
-                "variants": req.variants, "strength": req.strength,
+                "variants": req.variants,
                 "target_size": list(req.target_size)}
         (folder / "settings.json").write_text(
             json.dumps(meta, indent=2), encoding="utf-8")
@@ -69,8 +69,10 @@ def _history_msg(offset, limit, preview=False):
         except (OSError, json.JSONDecodeError):
             meta = {}
         files = sorted(folder.glob("final_*.png"))
-        images = [image_to_raw(Image.open(f))
-                  for f in (files[:1] if preview else files)]
+        images = []
+        for f in (files[:1] if preview else files):
+            with Image.open(f) as im:  # else the handle lives until GC
+                images.append(image_to_raw(im))
         if images:
             # offset = absolute folder index: runs without images are
             # skipped, so a list position is not a valid server offset

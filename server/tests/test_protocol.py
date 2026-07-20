@@ -26,7 +26,6 @@ def test_parse_generate_request_defaults():
     assert req.id == "r1"
     assert req.mode == "generate"
     assert req.variants == 4
-    assert req.strength == 0.6
     assert req.target_size == (64, 64)
     assert req.frames == []
     assert req.background == "auto"
@@ -52,7 +51,7 @@ def test_parse_edit_request_decodes_frame():
     b64 = image_to_b64(_red_16())
     req = parse_request(json.dumps({
         "id": "r2", "mode": "edit", "prompt": "horse on two legs",
-        "target_size": [16, 16], "strength": 0.4,
+        "target_size": [16, 16],
         "frames": [{"image": b64, "mask": None}],
     }))
     assert len(req.frames) == 1
