@@ -1,0 +1,487 @@
+<title>SpriteForge, local AI pixel art assistant for Aseprite</title>
+<style>
+  :root {
+    --bg: #14161c;
+    --bg-2: #1c1f28;
+    --panel: #20242f;
+    --line: #2c313d;
+    --ink: #d3d7e0;
+    --ink-dim: #8b93a5;
+    --ink-faint: #616a7d;
+    --gold: #f2b23c;
+    --gold-deep: #d8951f;
+    --danger: #e8705a;
+    --check-a: #232733;
+    --check-b: #1a1d26;
+    --mono: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --maxw: 1080px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #ece7dc;
+      --bg-2: #e2dccd;
+      --panel: #f4f0e6;
+      --line: #d3ccba;
+      --ink: #2a2822;
+      --ink-dim: #6a6555;
+      --ink-faint: #8c8674;
+      --gold: #b9791a;
+      --gold-deep: #9c6410;
+      --danger: #b23c28;
+      --check-a: #d9d3c4;
+      --check-b: #e6e0d2;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161c; --bg-2: #1c1f28; --panel: #20242f; --line: #2c313d;
+    --ink: #d3d7e0; --ink-dim: #8b93a5; --ink-faint: #616a7d;
+    --gold: #f2b23c; --gold-deep: #d8951f; --danger: #e8705a;
+    --check-a: #232733; --check-b: #1a1d26;
+  }
+  :root[data-theme="light"] {
+    --bg: #ece7dc; --bg-2: #e2dccd; --panel: #f4f0e6; --line: #d3ccba;
+    --ink: #2a2822; --ink-dim: #6a6555; --ink-faint: #8c8674;
+    --gold: #b9791a; --gold-deep: #9c6410; --danger: #b23c28;
+    --check-a: #d9d3c4; --check-b: #e6e0d2;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { max-width: 100%; }
+  a { color: var(--gold); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; border-radius: 2px; }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+
+  /* ---- top bar ---- */
+  header.bar {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-weight: 700; letter-spacing: 0.02em; }
+  .brand .dot { width: 12px; height: 12px; background: var(--gold); box-shadow: 4px 0 0 var(--gold), 0 4px 0 var(--danger); }
+  .bar nav { display: flex; gap: 22px; font-size: 14px; }
+  .bar nav a { color: var(--ink-dim); }
+  .bar nav a:hover { color: var(--ink); text-decoration: none; }
+  .ghbtn { color: var(--ink) !important; border: 1px solid var(--line); padding: 7px 14px; border-radius: 6px; font-family: var(--mono); font-size: 13px; }
+  .ghbtn:hover { border-color: var(--gold); text-decoration: none; }
+  @media (max-width: 640px) { .bar nav .navlink { display: none; } }
+
+  /* ---- hero ---- */
+  .hero { padding: 80px 0 40px; }
+  .hero h1 {
+    font-size: clamp(40px, 7vw, 76px);
+    line-height: 1.02;
+    letter-spacing: -0.02em;
+    margin: 18px 0 0;
+    text-wrap: balance;
+    font-weight: 800;
+  }
+  .hero h1 .fg { color: var(--gold); }
+  .hero .lede {
+    max-width: 60ch;
+    font-size: clamp(17px, 2.2vw, 20px);
+    color: var(--ink-dim);
+    margin: 22px 0 0;
+  }
+  .hero .cta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 32px; }
+  .btn {
+    font-family: var(--mono); font-size: 15px; font-weight: 600;
+    padding: 13px 22px; border-radius: 8px; border: 1px solid transparent;
+    display: inline-flex; align-items: center; gap: 9px;
+  }
+  .btn.primary { background: var(--gold); color: #17130a; }
+  .btn.primary:hover { background: var(--gold-deep); text-decoration: none; }
+  .btn.secondary { border-color: var(--line); color: var(--ink); }
+  .btn.secondary:hover { border-color: var(--gold); text-decoration: none; }
+  .badges { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px 18px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-faint); }
+  .badges span::before { content: "▚ "; color: var(--gold); }
+
+  /* ---- checkerboard gallery ---- */
+  .stage {
+    margin-top: 54px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    background: var(--panel);
+  }
+  .stage-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    font-family: var(--mono); font-size: 12px; color: var(--ink-faint);
+  }
+  .stage-head .tl { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+  .stage-head .tl:nth-child(1){ background:#e8705a; } .stage-head .tl:nth-child(2){ background:#e6b34a; } .stage-head .tl:nth-child(3){ background:#6bbf7a; }
+  .stage-head .title { margin-left: 8px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    background-image:
+      linear-gradient(45deg, var(--check-a) 25%, transparent 25%, transparent 75%, var(--check-a) 75%),
+      linear-gradient(45deg, var(--check-a) 25%, var(--check-b) 25%, var(--check-b) 75%, var(--check-a) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+    background-color: var(--check-b);
+  }
+  @media (max-width: 820px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 420px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  .cell {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px;
+    padding: 12px; position: relative; min-width: 0;
+    border-right: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  }
+  .cell img {
+    image-rendering: pixelated;
+    width: 128px; height: 128px; max-width: 100%; object-fit: contain;
+    transition: transform .18s ease;
+  }
+  .cell:hover img { transform: translateY(-4px) scale(1.06); }
+  .cell .tag {
+    font-family: var(--mono); font-size: 11px; color: var(--ink);
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    padding: 3px 8px; border-radius: 5px;
+    opacity: 0; transition: opacity .18s ease;
+    position: absolute; bottom: 12px; text-align: center; max-width: 90%;
+  }
+  .cell:hover .tag { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .cell img { transition: none; } .cell:hover img { transform: none; } .cell .tag { transition: none; }
+  }
+
+  /* ---- sections ---- */
+  section { padding: 72px 0; border-top: 1px solid var(--line); }
+  .section-title { font-size: clamp(26px, 4vw, 36px); letter-spacing: -0.01em; margin: 10px 0 0; font-weight: 800; text-wrap: balance; }
+  .section-sub { color: var(--ink-dim); max-width: 62ch; margin: 14px 0 0; }
+
+  .tasks { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 40px; }
+  @media (max-width: 720px){ .tasks { grid-template-columns: 1fr; } }
+  .task {
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 24px;
+  }
+  .task h3 { margin: 0; font-family: var(--mono); font-size: 16px; color: var(--gold); }
+  .task p { margin: 10px 0 0; color: var(--ink-dim); font-size: 15px; }
+  .task .ex { margin-top: 14px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-faint); border-left: 2px solid var(--line); padding-left: 12px; }
+
+  /* ---- prompt recipe ---- */
+  .recipe { margin-top: 34px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .recipe .chip { font-family: var(--mono); font-size: 13px; padding: 8px 14px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); color: var(--ink); }
+  .recipe .plus { color: var(--gold); font-family: var(--mono); font-weight: 700; }
+
+  /* ---- how it works pipeline ---- */
+  .pipe {
+    margin-top: 40px; display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 14px;
+  }
+  @media (max-width: 760px){ .pipe { grid-template-columns: 1fr; } .pipe .arrow { display: none; } }
+  .node {
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 20px;
+  }
+  .node .k { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); }
+  .node .v { margin-top: 8px; font-weight: 700; }
+  .node .d { margin-top: 6px; font-size: 13.5px; color: var(--ink-dim); }
+  .arrow { display: flex; align-items: center; justify-content: center; color: var(--ink-faint); font-family: var(--mono); }
+
+  /* ---- requirements spec sheet ---- */
+  .spec { margin-top: 36px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg-2); }
+  .spec .row { display: grid; grid-template-columns: 200px 1fr; gap: 0; border-top: 1px solid var(--line); }
+  .spec .row:first-child { border-top: 0; }
+  .spec .k { padding: 15px 20px; font-family: var(--mono); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); background: color-mix(in srgb, var(--bg) 40%, transparent); }
+  .spec .v { padding: 15px 20px; font-size: 15px; }
+  @media (max-width: 560px){ .spec .row { grid-template-columns: 1fr; } .spec .v { padding-top: 0; } }
+  .spec .v strong { color: var(--gold); }
+  .warn {
+    margin-top: 22px; border-left: 3px solid var(--danger);
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; font-size: 15px; color: var(--ink);
+  }
+
+  /* ---- install steps ---- */
+  .steps { margin-top: 36px; display: grid; gap: 14px; counter-reset: s; }
+  .step { display: grid; grid-template-columns: 40px 1fr; gap: 16px; align-items: start; }
+  .step .n {
+    counter-increment: s; width: 36px; height: 36px; border-radius: 8px;
+    display: grid; place-items: center; font-family: var(--mono); font-weight: 700;
+    background: var(--bg-2); border: 1px solid var(--line); color: var(--gold);
+  }
+  .step .n::before { content: counter(s); }
+  .step code, code.inline {
+    font-family: var(--mono); font-size: 13.5px;
+    background: var(--bg-2); border: 1px solid var(--line);
+    padding: 2px 7px; border-radius: 5px; color: var(--ink);
+  }
+  .step .body { padding-top: 6px; }
+  .step .body p { margin: 0; color: var(--ink-dim); }
+
+  /* ---- final cta ---- */
+  .final { text-align: center; }
+  .final h2 { font-size: clamp(28px, 5vw, 44px); font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+  .final p { color: var(--ink-dim); margin: 16px auto 0; max-width: 52ch; }
+  .final .cta { justify-content: center; }
+
+  footer { border-top: 1px solid var(--line); padding: 34px 0 60px; color: var(--ink-faint); font-size: 13.5px; }
+  footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; }
+  footer .mono { font-family: var(--mono); }
+</style>
+
+<header class="bar">
+  <div class="wrap">
+    <div class="brand"><span class="dot"></span> SpriteForge</div>
+    <nav>
+      <a class="navlink" href="#tasks">What it does</a>
+      <a class="navlink" href="#how">How it works</a>
+      <a class="navlink" href="#req">Requirements</a>
+      <a class="ghbtn" href="https://github.com/vkarach/sprite-forge">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero" style="border-top:0;">
+    <div class="wrap">
+      <div class="eyebrow">Local · GPU only · No subscription</div>
+      <h1>Pixel art sprites, generated <span class="fg">inside Aseprite.</span></h1>
+      <p class="lede">
+        SpriteForge runs a diffusion model on your own GPU and wires it straight
+        into Aseprite. Type a prompt, get a sprite; describe an edit, get a
+        variant dropped in as a new layer. Nothing leaves your machine, and
+        your existing pixels are never touched.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/vkarach/sprite-forge">Get it on GitHub</a>
+        <a class="btn secondary" href="#how">See how it works</a>
+      </div>
+      <div class="badges">
+        <span>Runs fully offline</span>
+        <span>One resident model, no swaps</span>
+        <span>Apache 2.0 licensed</span>
+      </div>
+
+      <div class="stage">
+        <div class="stage-head">
+          <span class="tl"></span><span class="tl"></span><span class="tl"></span>
+          <span class="title">results · hover a sprite</span>
+        </div>
+        <div class="grid">
+          <div class="cell"><img src="data:image/png;base64,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" alt="chest sprite"><span class="tag">"wooden treasure chest with iron bands and a brass lock"</span></div>
+          <div class="cell"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAD6UlEQVR4nO3dzUtUURjH8TvDmJiohSjlJtrlQnqBgohWbfobgrYtojd6wYgghAgDi16kRbQq6G9oI9QipBaVDaG0yFwUg5OZiQ2mzIRXD3RO83ab0bnneb4fGM7cmTvXQc7zu+e+ThAAAAAAAAAAAAAAAAAAAAAAAAAA8E8iEG7bjr2FWj6fmXor+n+UbPQXQGOlAuGVf+HY/pqWc+tpUJCcBCSAcmIToF52drWHbWYqEIkEUE58Asx9mKjp85PZ+UAyEkC5lNbt/pGvq4P6Iz2Fsu9LRwIol9K6x8+t/JEKieAuX8p+ARJAOTEJYNx/8iBsv838CNuBc1ciff5R1p6+dueGNR11eXFHAignYj1WbgzgJkJUA07FS1n3GySAcqJ6c7EkMPvyjcnsz6Dc+6XmM0gAiCJuK8Bd948N9dtv9LQ5cxaKfn4kaC+bBFIwBlCODqAcHUA5OkAJK8cESh0XkIQOoFxC6va/2QpYmFsI29aOVmu6ktzykoo9giSAcgkplW/26J2/PRip0g2TEC73GIK0JCABlEv4XvlmXW9ErfyoSdCSarJev3zqktdJQAIol5BS+aUqtF5yzlaBlCQgAZRL+Fr57uj8wCF73Z9+taXocmY237OmO3+diVT5Lt+TgARQzvvzAdzKf55+HLaJrcWP47tl+b35+n/93ZZsv5UQbhKYxIp7EpAAyqV8Xfe7lW8kmjfmDJ5c101rumX2auAjEkC52CeAq23Xs7Vnh63XX3wcDhrpzezZsB0cvmttDcQdCaBc7BPAPW9/fuLo6hNnDNDduTtsp2fGNuR7ff7kXEToKRJAudgnQLVyqfdh27F9tU83/+6raXmLqfGw3dNxImzfzT0M27HRL4EkJIByYhIgmbR3uC1uSlvT+Xyh6Hwl5VNW5UtFAigX+wSIem2eqfSaJZcDDUgA5WKfAPWu/MhjAeFIAOVinwCl7uCxXomRVJYMJIBysU+AjZIM1s7oyZtmyX5d6FYBCaCcmARw191R9wfk3Yr/ZwYx/yoLCaCczG79VyLUPQmEIQGUi30C1HqfPreSTYVXmk8LEkA5+R1gZftd6DZ8PcjvAPB7DFCtSkf5Sq37tY7+DRJAOW86wOnjJ8NHNUlQ7FFKMmiyHtp40wGgdAxgrq937wT6+mWrdZVwenQ6bPsOdkdafr7C2KBavW1DYcsdQuAV705/MUng/p7f+PzFhnyf3rXK9/UOoowBlPOilxbjjglMIph79Zjr9ett39bi1//7UvEuEkA5L3ttPX49vF4ynla+QQIo53XvXc+EyHhe2dUiAQAAAAAAAAAAAAAAAAAAAAAAAADAO38AXa5C0JF5VpwAAAAASUVORK5CYII=" alt="potion sprite"><span class="tag">"glass potion bottle, glowing green liquid"</span></div>
+          <div class="cell"><img src="data:image/png;base64,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" alt="lantern sprite"><span class="tag">"rusty iron lantern with a warm flame"</span></div>
+          <div class="cell"><img src="data:image/png;base64,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" alt="cottage sprite"><span class="tag">"wooden cottage, thatched roof, round door" · front view</span></div>
+          <div class="cell"><img src="data:image/png;base64,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" alt="gate sprite"><span class="tag">"grey stone castle gate with two towers" · front view</span></div>
+          <div class="cell"><img src="data:image/png;base64,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" alt="fox sprite"><span class="tag">"red fox with a bushy tail" · side view</span></div>
+          <div class="cell"><img src="data:image/png;base64,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" alt="dragon sprite"><span class="tag">"plump orange dragon with a curled tail" · side view</span></div>
+          <div class="cell"><img src="data:image/png;base64,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" alt="knight sprite"><span class="tag">"knight in steel plate armor, round shield" · side view</span></div>
+        </div>
+      </div>
+      <p style="margin-top:14px; font-size:13px; color:var(--ink-faint); font-family:var(--mono);">
+        Real output from the tool, one generation each. Shown scaled up with hard pixel edges; native sizes are 48 to 64&nbsp;px.
+      </p>
+    </div>
+  </section>
+
+  <section id="tasks">
+    <div class="wrap">
+      <div class="eyebrow">Four tasks, one panel</div>
+      <h2 class="section-title">You stay in the editor the whole time</h2>
+      <p class="section-sub">
+        Every task opens results in a side window; click a variant to insert it
+        as a new layer. It never modifies the pixels you already drew.
+      </p>
+      <div class="tasks">
+        <div class="task">
+          <h3>Generate</h3>
+          <p>A sprite from a text prompt. Pick a view preset, name the subject, add extra detail, and the panel shows the exact text it will send.</p>
+          <div class="ex">"closed book with dark brown leather cover"</div>
+        </div>
+        <div class="task">
+          <h3>Edit with AI</h3>
+          <p>Change an existing sprite by instruction, not a strength slider. Style and everything you didn't mention stays put.</p>
+          <div class="ex">"make the sword glow slightly blue"</div>
+        </div>
+        <div class="task">
+          <h3>Inpaint Selection</h3>
+          <p>Same as Edit, but only ever touches the region you selected. The rest of the sprite is guaranteed untouched.</p>
+          <div class="ex">"replace the wheels with skis"</div>
+        </div>
+        <div class="task">
+          <h3>Rotate and Instruct</h3>
+          <p>See the same subject from another angle. Name the subject explicitly and enable mirror symmetry for clean front and back views.</p>
+          <div class="ex">"show the same character from behind"</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="prompts">
+    <div class="wrap">
+      <div class="eyebrow">Prompting</div>
+      <h2 class="section-title">A good sprite starts with a concrete subject</h2>
+      <p class="section-sub">
+        You don't write a paragraph. You name the <strong>subject</strong> the
+        way you'd describe it to another artist, pick a <strong>view</strong>,
+        and drop refinements in the <strong>extra</strong> field. The panel wraps
+        that into the exact camera and framing text the model reads. "a bear"
+        works; "a bear" with detail works far better.
+      </p>
+
+      <div class="recipe">
+        <span class="chip">subject</span>
+        <span class="plus">+</span>
+        <span class="chip">material &amp; colour</span>
+        <span class="plus">+</span>
+        <span class="chip">one defining detail</span>
+      </div>
+
+      <div class="tasks">
+        <div class="task">
+          <h3>3/4 view</h3>
+          <p>Props and objects. Read as a game asset from slightly above.</p>
+          <div class="ex">"a wooden treasure chest with iron bands and a brass lock, lid closed"</div>
+        </div>
+        <div class="task">
+          <h3>Side view</h3>
+          <p>Creatures and characters for a side scroller. Name the silhouette.</p>
+          <div class="ex">"a four legged brown horse with a black mane, standing"</div>
+        </div>
+        <div class="task">
+          <h3>Front view</h3>
+          <p>Buildings, gates, symmetrical structures seen head on.</p>
+          <div class="ex">"a grey stone castle gate with two towers and a raised portcullis"</div>
+        </div>
+        <div class="task">
+          <h3>Top down</h3>
+          <p>Tiles and furniture for an overhead map.</p>
+          <div class="ex">"a round wooden table with a red cloth, a lit candle, and two plates"</div>
+        </div>
+      </div>
+
+      <div class="spec" style="margin-top:24px;">
+        <div class="row"><div class="k" style="color:var(--danger);">Too vague</div><div class="v">"a monster" · "a character" · "a building"</div></div>
+        <div class="row"><div class="k" style="color:var(--gold);">Concrete</div><div class="v">"a horned red demon with leathery bat wings, standing on two legs"</div></div>
+      </div>
+
+      <p class="section-sub" style="margin-top:22px;">
+        Two more levers: put palette and mood in <strong>extra</strong> ("muted
+        earth tones", "limited eight colour palette"), and for Rotate keep the
+        same subject wording so the character stays itself across angles.
+      </p>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <div class="eyebrow">Architecture</div>
+      <h2 class="section-title">How it works</h2>
+      <p class="section-sub">
+        A Lua extension in Aseprite talks over WebSocket to a local Python
+        server that keeps one model resident on the GPU. After the first
+        warm up there are no model swaps, so tasks respond in seconds.
+      </p>
+      <div class="pipe">
+        <div class="node">
+          <div class="k">Aseprite · Lua</div>
+          <div class="v">The plugin</div>
+          <div class="d">Control panel, results & history windows, frame/mask export, layer insertion.</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node">
+          <div class="k">Python · WebSocket</div>
+          <div class="v">The server</div>
+          <div class="d">Validates the request at the boundary, streams progress, postprocesses raw output into a clean sprite.</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node">
+          <div class="k">FLUX.2 Klein · GPU</div>
+          <div class="v">The model</div>
+          <div class="d">One 4B parameter pipeline, always resident. First load downloads ~15&nbsp;GB; then it stays warm.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="req">
+    <div class="wrap">
+      <div class="eyebrow">Before you download</div>
+      <h2 class="section-title">This runs a real model on your hardware</h2>
+      <p class="section-sub">
+        SpriteForge is deliberately local: no cloud, no CPU fallback. That
+        buys you privacy and zero subscription, at the cost of needing a
+        capable GPU. Check the spec before you install.
+      </p>
+      <div class="spec">
+        <div class="row"><div class="k">GPU</div><div class="v"><strong>NVIDIA, 12+ GB VRAM</strong> · developed on an RTX 5080</div></div>
+        <div class="row"><div class="k">OS</div><div class="v">Windows</div></div>
+        <div class="row"><div class="k">Python</div><div class="v">3.11 or newer</div></div>
+        <div class="row"><div class="k">Aseprite</div><div class="v">1.3 or newer</div></div>
+        <div class="row"><div class="k">Disk</div><div class="v">~15 GB for the model, downloaded on first run</div></div>
+      </div>
+      <div class="warn">
+        No NVIDIA GPU with enough VRAM, no SpriteForge. There is no cloud
+        option by design. If that's a dealbreaker, this tool isn't for you,
+        and that's fine.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="eyebrow">Setup</div>
+      <h2 class="section-title">Four commands and a restart</h2>
+      <div class="steps">
+        <div class="step"><div class="n"></div><div class="body"><p>Create a virtual environment: <code>py -3 -m venv .venv</code></p></div></div>
+        <div class="step"><div class="n"></div><div class="body"><p>Install server deps: <code>.venv\Scripts\python -m pip install -r server\requirements.txt</code></p></div></div>
+        <div class="step"><div class="n"></div><div class="body"><p>Install CUDA Torch: <code>pip install torch --index-url https://download.pytorch.org/whl/cu128</code></p></div></div>
+        <div class="step"><div class="n"></div><div class="body"><p>Run <code class="inline">install-plugin.bat</code>, restart Aseprite, then start the server and open <strong>Sprite → SpriteForge</strong>.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="wrap">
+      <h2>Forge your first sprite.</h2>
+      <p>Free, open source, and entirely yours to run. Full setup and docs live on GitHub.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/vkarach/sprite-forge">Open the repository ↗</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="mono">SpriteForge · local AI pixel art assistant for Aseprite</span>
+    <span class="mono">Apache 2.0 · built on FLUX.2 Klein</span>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    try {
+      var t = localStorage.getItem("sf-theme");
+      if (t) root.setAttribute("data-theme", t);
+    } catch (e) {}
+  })();
+</script>

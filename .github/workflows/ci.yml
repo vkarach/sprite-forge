@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  server:
+    name: Server tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # Tests mock the model; torch/diffusers not needed, only eager runtime deps.
+      - name: Install light deps
+        run: pip install "websockets>=12.0" "Pillow>=10.0" "numpy>=1.26" "scipy>=1.11" "pytest>=8.0"
+      - name: Run tests
+        run: python -m pytest server/tests/ --ignore=server/tests/smoke.py -q
+
+  plugin:
+    name: Plugin lint + tests (luacheck / lua)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.4 + luacheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4 luarocks
+          sudo luarocks install luacheck
+      - name: Luacheck
+        run: luacheck plugin/*.lua plugin/tests/*.lua
+      - name: Unit tests
+        run: |
+          lua5.4 plugin/tests/test_prompt.lua
+          lua5.4 plugin/tests/test_panel.lua

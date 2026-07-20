@@ -1,0 +1,31 @@
+name: Bug report
+description: Something broke in the server or the Aseprite plugin
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got.
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and VRAM
+      placeholder: "RTX 5080, 16 GB"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Aseprite / Python versions
+      placeholder: "Aseprite 1.3.7, Python 3.11.5"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server console output
+      description: Paste the relevant lines from the start-server window.
+      render: text
