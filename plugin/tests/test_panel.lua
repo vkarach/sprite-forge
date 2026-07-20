@@ -257,6 +257,26 @@ for _, sc in ipairs(scenarios) do
   end
 end
 
+-- A cleared Width field arrives as "" or nil; the checklist must handle that
+-- rather than doing arithmetic on it.
+REPLY = { type = "pong", model = "ready" }
+D._isOpen = false
+pcall(D.open)
+for _, w in ipairs(lastDialog and lastDialog.widgets or {}) do
+  if w.kind == "canvas" and w.spec.id == "view" then
+    for _, size in ipairs({ 0, "", "abc" }) do
+      lastDialog.data.mode = "Generate"
+      lastDialog.data.genSubject = "a sword"
+      lastDialog.data.w, lastDialog.data.h = size, size
+      local good, e = pcall(w.spec.onpaint, { context = stubGC() })
+      check("checklist paints with width = " .. tostring(size), good, e)
+    end
+    lastDialog.data.w, lastDialog.data.h = nil, nil
+    local good, e = pcall(w.spec.onpaint, { context = stubGC() })
+    check("checklist paints with a missing width", good, e)
+  end
+end
+
 -- With a sprite open the checklist takes its other branch (requirements met).
 REPLY = { type = "pong", model = "ready" }
 app.sprite = { width = 32, height = 32,

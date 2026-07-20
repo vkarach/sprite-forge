@@ -135,3 +135,23 @@ def test_progress_msg_stage_optional():
     msg = json.loads(progress_msg("r", 0.0, stage="Loading model..."))
     assert msg["stage"] == "Loading model..."
     assert msg["type"] == "progress"
+
+
+def test_rejects_target_size_out_of_range():
+    for size in ([0, 0], [64, 0], [-8, 64], [99999, 99999]):
+        with pytest.raises(ProtocolError, match="target_size"):
+            parse_request(json.dumps({
+                "id": "r", "mode": "generate", "prompt": "p",
+                "target_size": size,
+            }))
+
+
+def test_clamps_variants_to_the_slider_range():
+    def variants(n):
+        return parse_request(json.dumps({
+            "id": "r", "mode": "generate", "prompt": "p",
+            "target_size": [64, 64], "variants": n,
+        })).variants
+    assert variants(10000) == 8
+    assert variants(0) == 1
+    assert variants(3) == 3

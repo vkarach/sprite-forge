@@ -8,6 +8,8 @@ from PIL import Image
 
 VALID_MODES = ("generate", "edit", "inpaint", "instruct")
 VALID_BACKGROUNDS = ("auto", "remove", "keep")
+MAX_SIDE = 4096      # a sprite side; well past pixel art, guards allocations
+MAX_VARIANTS = 8     # matches the panel's slider
 
 
 class ProtocolError(Exception):
@@ -77,6 +79,13 @@ def parse_request(text: str) -> Request:
     if mode not in VALID_MODES:
         raise ProtocolError(f"unknown mode '{mode}'")
 
+    # A cleared Width field sends 0, which used to divide by zero deep in
+    # t2i_size; say so at the boundary instead.
+    if not all(1 <= v <= MAX_SIDE for v in target_size):
+        raise ProtocolError(
+            f"target_size must be 1..{MAX_SIDE} per side, got "
+            f"{target_size[0]}x{target_size[1]}")
+
     background = str(data.get("background", "auto"))
     if background not in VALID_BACKGROUNDS:
         raise ProtocolError(f"unknown background '{background}'")
@@ -97,7 +106,9 @@ def parse_request(text: str) -> Request:
 
     return Request(
         id=req_id, mode=mode, prompt=prompt, target_size=target_size,
-        variants=int(data.get("variants", 4)),
+        # clamped, not rejected: an out-of-range slider is worth honouring
+        # as "as many as I allow", but an unbounded count pins the GPU
+        variants=max(1, min(MAX_VARIANTS, int(data.get("variants", 4)))),
         symmetry=bool(data.get("symmetry", False)),
         background=background,
         frames=frames,

@@ -145,6 +145,9 @@ function D.open()
       local text = P.assembleGenPrompt(d.genView, d.genSubject, d.genDetails)
       reqs[1] = text and willSend(text)
         or { false, "Subject describes what to generate" }
+      -- a cleared number field reads as 0, which the server rejects
+      local w, h = tonumber(d.w) or 0, tonumber(d.h) or 0
+      reqs[2] = { w >= 1 and h >= 1, "Width and height are set" }
     elseif m == "Edit with AI" then
       reqs[1] = { spr ~= nil, "A sprite is open" }
       reqs[2] = { d.prompt ~= "", "Prompt describes the change" }
