@@ -13,7 +13,14 @@ HOST, PORT = "127.0.0.1", 8798
 
 
 class FakeKlein:  # one model serves every mode, like the real one
-    def txt2img(self, prompt, target_size, variants=4, on_progress=None):
+    last_seeds = None
+
+    from server.instruct import KleinPipeline
+    variant_seeds = staticmethod(KleinPipeline.variant_seeds)
+
+    def txt2img(self, prompt, target_size, variants=4, on_progress=None,
+                seeds=None):
+        FakeKlein.last_seeds = seeds
         if on_progress:
             on_progress(0.5)
             on_progress(1.0)
@@ -21,10 +28,13 @@ class FakeKlein:  # one model serves every mode, like the real one
                 for _ in range(variants)]
 
     def edit_by_instruction(self, instruction, image, variants=4,
-                            on_progress=None):
+                            on_progress=None, seeds=None):
+        FakeKlein.last_seeds = seeds
         return [image.resize((1024, 1024))] * variants
 
-    def inpaint(self, prompt, image, mask, variants=4, on_progress=None):
+    def inpaint(self, prompt, image, mask, variants=4, on_progress=None,
+                seeds=None):
+        FakeKlein.last_seeds = seeds
         return [image.resize((1024, 1024))] * variants
 
 
@@ -180,7 +190,7 @@ def test_edit_crops_small_subject_to_fill_frame(server_thread):
 
     class SmallSubjectKlein(FakeKlein):
         def edit_by_instruction(self, instruction, image, variants=4,
-                                on_progress=None):
+                                on_progress=None, seeds=None):
             canvas = Image.new("RGBA", (1024, 1024), (0, 0, 0, 255))
             canvas.paste(Image.new("RGBA", (120, 120), (240, 240, 240, 255)),
                          (452, 800))
@@ -269,3 +279,66 @@ def test_t2i_size_matches_target_aspect():
     assert t2i_size((70, 70)) == (512, 512)  # rounds to /16
     w, h = t2i_size((128, 24))
     assert w == 512 and h % 16 == 0 and h >= 16
+
+
+def test_variant_seeds_are_distinct_and_reproducible():
+    from server.instruct import KleinPipeline as K
+    # a given seed always yields the same per-variant seeds
+    assert K.variant_seeds(1000, 4) == K.variant_seeds(1000, 4)
+    # but the variants inside one run differ, or all four come out identical
+    assert len(set(K.variant_seeds(1000, 4))) == 4
+    # no seed means a fresh roll each time
+    assert K.variant_seeds(None, 4) != K.variant_seeds(None, 4)
+    assert all(0 <= s < 2**32 for s in K.variant_seeds(None, 8))
+    # wrapping at 2^32 must stay in range
+    assert all(0 <= s < 2**32 for s in K.variant_seeds(2**32 - 2, 4))
+
+
+def test_generate_reports_seeds_and_honours_a_requested_one(server_thread):
+    async def go(payload):
+        async with websockets.connect(f"ws://{HOST}:{PORT}",
+                                      max_size=64 * 2**20) as ws:
+            await ws.send(json.dumps(payload))
+            while True:
+                msg = json.loads(await ws.recv())
+                if msg["type"] == "result":
+                    return msg
+
+    base = {"id": "s1", "mode": "generate", "prompt": "sword",
+            "target_size": [64, 64], "variants": 3}
+    msg = asyncio.run(go(dict(base, seed=4242)))
+    assert msg["seeds"] == [4242, 4243, 4244]
+    assert FakeKlein.last_seeds == [4242, 4243, 4244]
+
+    # the same request twice must reuse the seeds, a seedless one must not
+    again = asyncio.run(go(dict(base, seed=4242)))
+    assert again["seeds"] == msg["seeds"]
+    rolled = asyncio.run(go(base))
+    assert len(rolled["seeds"]) == 3
+    assert rolled["seeds"] != msg["seeds"]
+
+
+def test_seeds_reach_settings_json_and_history(monkeypatch, tmp_path):
+    import json as _json
+    from server.protocol import Request
+    monkeypatch.setattr(srv, "DEBUG_DIR", tmp_path)
+    monkeypatch.setattr(srv, "DEBUG_SAVE", True)
+    req = Request(id="r", mode="generate", prompt="sword",
+                  target_size=(8, 8), variants=2)
+    img = Image.new("RGBA", (8, 8))
+    srv._save_debug(req, [img, img], [img, img], [7, 8])
+    folder = next(tmp_path.iterdir())
+    assert _json.loads((folder / "settings.json").read_text())["seeds"] == [7, 8]
+    run = _json.loads(srv._history_msg(0, 5))["runs"][0]
+    assert run["seeds"] == [7, 8]
+
+
+def test_history_of_a_pre_seed_run_reports_no_seeds(monkeypatch, tmp_path):
+    import json as _json
+    monkeypatch.setattr(srv, "DEBUG_DIR", tmp_path)
+    folder = tmp_path / "20260101-000000_generate_x_0"
+    folder.mkdir()
+    Image.new("RGBA", (8, 8)).save(folder / "final_0.png")
+    (folder / "settings.json").write_text(
+        _json.dumps({"mode": "generate", "prompt": "old"}), encoding="utf-8")
+    assert _json.loads(srv._history_msg(0, 5))["runs"][0]["seeds"] == []

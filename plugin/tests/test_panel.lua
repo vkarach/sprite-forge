@@ -41,6 +41,14 @@ Image = setmetatable({}, { __call = function(_, a, b)
   return stubImage(a, b)
 end })
 
+Sprite = setmetatable({}, { __call = function(_, w, h)
+  local layer = { name = "", cel = function() return nil end }
+  return { width = w, height = h, layers = { layer },
+           newLayer = function() return layer end,
+           newCel = function() end, deleteCel = function() end,
+           deleteLayer = function() end, close = function() end }
+end })
+
 Timer = nil       -- panel must survive a build without timers
 WebSocketMessageType = { OPEN = 0, TEXT = 1, CLOSE = 2 }
 
@@ -89,6 +97,7 @@ local function stubDialog()
     end
   end
   d.separator, d.combobox, d.entry = add("separator"), add("combobox"), add("entry")
+  d.label = add("label")
   d.check, d.number, d.slider = add("check"), add("number"), add("slider")
   d.button, d.canvas = add("button"), add("canvas")
   d.modify = function(self, t)
@@ -158,6 +167,43 @@ if ui then
         ui.variantAt({ x = g.cw * 5, y = 3 }, g, imgs) == nil, "")
   local painted, e2 = pcall(ui.drawVariants, stubGC(), imgs, g, { [1] = true })
   check("drawVariants paints a selected variant", painted, e2)
+end
+
+-- Seed labels: a run from before seeds existed must not blow up the window.
+if ui then
+  check("seedLabel handles a server that reported none",
+        ui.seedLabel(nil, 1):find("not reported") ~= nil, ui.seedLabel(nil, 1))
+  check("seedLabel handles an empty seed list",
+        ui.seedLabel({}, 1):find("not reported") ~= nil, ui.seedLabel({}, 1))
+  check("seedLabel names the picked variant",
+        ui.seedLabel({ 10, 11, 12 }, 2):find("11") ~= nil,
+        ui.seedLabel({ 10, 11, 12 }, 2))
+  check("seedLabel falls back to the first seed",
+        ui.seedLabel({ 10, 11 }, nil):find("10") ~= nil,
+        ui.seedLabel({ 10, 11 }, nil))
+  check("seedLabel survives a variant with no seed of its own",
+        type(ui.seedLabel({ 10 }, 5)) == "string", "")
+end
+
+-- Results window: paints and hit-tests with and without seeds.
+do
+  local R = assert(loadfile("plugin/results.lua"))("plugin")
+  local imgs = { stubImage(16, 16), stubImage(16, 16) }
+  for _, seeds in ipairs({ { 101, 102 }, {} }) do
+    local ok4, e = pcall(R.showResults, imgs, seeds, function() end)
+    check("results window opens (" .. #seeds .. " seeds)", ok4, e)
+    local canvas
+    for _, w in ipairs(lastDialog.widgets) do
+      if w.kind == "canvas" then canvas = w.spec end
+    end
+    check("results window has a canvas", canvas ~= nil, "")
+    if canvas then
+      local painted, e5 = pcall(canvas.onpaint, { context = stubGC() })
+      check("results window paints", painted, e5)
+      local clicked, e6 = pcall(canvas.onmouseup, { x = 3, y = 3 })
+      check("results window handles a click", clicked, e6)
+    end
+  end
 end
 
 -- exportMask must paint exactly the selection, and must not walk the whole

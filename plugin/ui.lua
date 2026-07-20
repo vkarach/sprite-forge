@@ -112,6 +112,16 @@ function U.variantAt(ev, g, imgs, yOffset)
   return imgs[n] and n or nil
 end
 
+-- Seed of variant n, or the run's first seed when nothing is picked yet.
+function U.seedLabel(seeds, n)
+  if not seeds or #seeds == 0 then return "Seed: not reported by the server" end
+  if n and seeds[n] then
+    return string.format("Seed of variant %d: %d  (paste into Seed to redo it)",
+                         n, seeds[n])
+  end
+  return "Seed: " .. tostring(seeds[1]) .. "  (click a variant for its own)"
+end
+
 -- "20260719-013000_..." -> "2026-07-19 01:30"; "" when the name has no stamp.
 function U.runWhen(name)
   local y4, mo, dd, hh, mi = name:match("^(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)")

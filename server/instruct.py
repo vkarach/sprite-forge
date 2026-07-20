@@ -7,6 +7,7 @@ the 8-bit one did.
 """
 import contextlib
 import logging
+import random
 
 from PIL import Image
 
@@ -121,6 +122,18 @@ class KleinPipeline:
         torch.cuda.empty_cache()
         log.info("klein pipeline ready")
 
+    @staticmethod
+    def variant_seeds(seed, variants):
+        """One seed per variant so a single good result can be reproduced."""
+        if seed is None:
+            return [random.randrange(2**32) for _ in range(variants)]
+        return [(seed + i) % 2**32 for i in range(variants)]
+
+    @staticmethod
+    def _generators(seeds):
+        import torch
+        return [torch.Generator(device="cuda").manual_seed(s) for s in seeds]
+
     def _cb(self, on_progress, done, chunk, total):
         if on_progress is None:
             return None
@@ -132,14 +145,8 @@ class KleinPipeline:
 
     @staticmethod
     def _prep_input(image):
-        """Integer-factor upscale + pad to model-friendly dims.
-
-        The model mimics the pixel grid it is shown. A fractional upscale
-        (70px -> 512 is x7.31) shows it stretched pixels and it answers with
-        off-grid, wobbly shapes (crooked eye frames). Integer scaling keeps
-        the grid honest; the padding to a multiple of 16 is cropped off the
-        output before postprocessing.
-        """
+        """Integer-factor upscale + pad to model-friendly dims; a fractional
+        upscale shows stretched pixels and comes back off-grid and wobbly."""
         rgb = image.convert("RGB")
         w, h = rgb.size
         k = max(1, MAX_SIDE // max(w, h))
@@ -151,9 +158,10 @@ class KleinPipeline:
         return canvas, (big.width, big.height)
 
     def edit_by_instruction(self, instruction, image, variants=4,
-                            on_progress=None):
+                            on_progress=None, seeds=None):
         self.load()
         big, (bw, bh) = self._prep_input(image)
+        seeds = seeds or self.variant_seeds(None, variants)
         out = []
         # Chunks of 2: image tokens double the sequence, ~12 GB peak.
         while len(out) < variants:
@@ -165,18 +173,18 @@ class KleinPipeline:
                 guidance_scale=GUIDANCE,
                 num_inference_steps=STEPS,
                 num_images_per_prompt=chunk,
+                generator=self._generators(seeds[len(out):len(out) + chunk]),
                 callback_on_step_end=self._cb(on_progress, len(out), chunk,
                                               variants),
             ).images
             out.extend(img.crop((0, 0, bw, bh)) for img in imgs)
         return [i.convert("RGBA") for i in out]
 
-    def inpaint(self, prompt, image, mask, variants=4, on_progress=None):
-        """Emulated inpaint: Klein edits the whole frame, but only the
-        masked region of the result is kept - pixels outside the selection
-        never change."""
+    def inpaint(self, prompt, image, mask, variants=4, on_progress=None,
+                seeds=None):
+        """Klein edits the whole frame; only the masked region is kept."""
         edits = self.edit_by_instruction(prompt, image, variants=variants,
-                                         on_progress=on_progress)
+                                         on_progress=on_progress, seeds=seeds)
         big_src = image.convert("RGBA").resize(edits[0].size, Image.NEAREST)
         big_mask = mask.convert("L").resize(edits[0].size, Image.NEAREST)
         out = []
@@ -186,9 +194,11 @@ class KleinPipeline:
             out.append(comp)
         return out
 
-    def txt2img(self, prompt, target_size, variants=4, on_progress=None):
+    def txt2img(self, prompt, target_size, variants=4, on_progress=None,
+                seeds=None):
         self.load()
         w, h = t2i_size(target_size)
+        seeds = seeds or self.variant_seeds(None, variants)
         out = []
         # Chunks of 4: text-only sequences are shorter, ~12 GB peak.
         while len(out) < variants:
@@ -198,6 +208,7 @@ class KleinPipeline:
                 width=w, height=h,
                 num_inference_steps=STEPS,
                 num_images_per_prompt=chunk,
+                generator=self._generators(seeds[len(out):len(out) + chunk]),
                 callback_on_step_end=self._cb(on_progress, len(out), chunk,
                                               variants),
             ).images

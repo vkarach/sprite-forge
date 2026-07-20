@@ -31,6 +31,7 @@ class Request:
     variants: int = 4
     symmetry: bool = False
     background: str = "auto"
+    seed: int | None = None  # None = roll a fresh one per variant
     frames: list[Frame] = field(default_factory=list)
 
 
@@ -104,6 +105,15 @@ def parse_request(text: str) -> Request:
     if mode == "inpaint" and frames[0].mask is None:
         raise ProtocolError("inpaint requires a mask")
 
+    seed = data.get("seed")
+    if seed is not None:
+        try:
+            seed = int(seed)
+        except (TypeError, ValueError) as e:
+            raise ProtocolError(f"seed must be an integer: {e}") from e
+        if not 0 <= seed < 2**32:
+            raise ProtocolError(f"seed must be 0..2^32-1, got {seed}")
+
     return Request(
         id=req_id, mode=mode, prompt=prompt, target_size=target_size,
         # clamped, not rejected: an out-of-range slider is worth honouring
@@ -111,6 +121,7 @@ def parse_request(text: str) -> Request:
         variants=max(1, min(MAX_VARIANTS, int(data.get("variants", 4)))),
         symmetry=bool(data.get("symmetry", False)),
         background=background,
+        seed=seed,
         frames=frames,
     )
 
@@ -122,11 +133,13 @@ def progress_msg(req_id: str, value: float, stage: str | None = None) -> str:
     return json.dumps(data)
 
 
-def result_msg(req_id: str, images: list[Image.Image]) -> str:
-    return json.dumps({
-        "id": req_id, "type": "result",
-        "images": [image_to_raw(i) for i in images],
-    })
+def result_msg(req_id: str, images: list[Image.Image],
+               seeds: list[int] | None = None) -> str:
+    data = {"id": req_id, "type": "result",
+            "images": [image_to_raw(i) for i in images]}
+    if seeds is not None:
+        data["seeds"] = seeds  # one per variant, so a single one can be redone
+    return json.dumps(data)
 
 
 def error_msg(req_id: str, message: str) -> str:

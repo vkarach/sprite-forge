@@ -15,7 +15,7 @@ local D = {}
 
 -- Settings survive across reopenings of the panel.
 local last = { mode = "Generate", prompt = "", w = nil, h = nil,
-               variants = 4, background = "Auto",
+               variants = 4, background = "Auto", seed = "",
                view = "Side view (right)", subject = "character",
                instruction = "", symmetry = false,
                genView = "3/4 view", genSubject = "", genDetails = "" }
@@ -205,11 +205,15 @@ function D.open()
     last.w = d.w; last.h = d.h
     last.variants = d.variants
     last.background = d.background
+    last.seed = d.seed
 
     local mode = P.MODE_KEY[d.mode]
     local payload = { id = sprite.newId(), mode = mode,
                       variants = d.variants, frames = {},
                       background = P.BG_KEY[d.background] or "auto" }
+    -- blank Seed means "roll one"; the field is text so it can stay empty
+    local seed = tonumber((d.seed or ""):match("^%s*(.-)%s*$"))
+    if seed then payload.seed = math.floor(seed) end
     if mode == "instruct" then
       local spr = app.sprite
       if not spr then
@@ -281,14 +285,14 @@ function D.open()
         end
         repaint()
       end,
-      onresult = function(images)
+      onresult = function(images, seeds)
         local imgs = {}
         for n, s in ipairs(images) do
           imgs[n] = sprite.imageFromPayload(s, n)
         end
         setState("done", string.format(
           "%d variants ready. Press Run for more.", #imgs))
-        results.showResults(imgs, function(n, added)
+        results.showResults(imgs, seeds, function(n, added)
           if added then
             setState("done", "Inserted variant " .. n ..
                              " (click it again to remove).")
@@ -497,6 +501,7 @@ function D.open()
   dlg:combobox{ id = "background", label = "Background:",
                 option = last.background,
                 options = { "Auto", "Remove", "Keep" } }
+  dlg:entry{ id = "seed", label = "Seed:", text = last.seed or "" }
   dlg:separator{ text = "Status" }
   dlg:canvas{
     id = "view", width = STATUS_W, height = STATUS_H,

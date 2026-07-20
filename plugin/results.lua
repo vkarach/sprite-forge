@@ -6,7 +6,7 @@ local sprite = assert(loadfile(
 
 local R = {}
 
-function R.showResults(imgs, onInserted)
+function R.showResults(imgs, seeds, onInserted)
   local g = ui.gridLayout(imgs, 600, 440)
   local W, H = g.cols * g.cw, g.rows * g.ch
   local inserted = {}  -- variant index -> {sprite, layer}, toggled by clicks
@@ -25,9 +25,11 @@ function R.showResults(imgs, onInserted)
       if not n then return end
       local added = sprite.toggleVariant(inserted, n, imgs[n], "SpriteForge ")
       if onInserted then onInserted(n, added) end
+      dlg:modify{ id = "seed", text = ui.seedLabel(seeds, n) }
       dlg:repaint()
     end,
   }
+  dlg:label{ id = "seed", text = ui.seedLabel(seeds, nil) }
   dlg:button{ text = "Close" }
   dlg:show{ wait = true }  -- opened from a WS callback, no nested modal loop
   app.refresh()

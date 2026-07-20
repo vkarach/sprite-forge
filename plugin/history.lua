@@ -59,9 +59,11 @@ local function showRun(client, offset)
       local n = ui.variantAt(ev, grid(), imgs, HEAD)
       if not n then return end
       sprite.toggleVariant(inserted, n, imgs[n], "SpriteForge H")
+      dlg:modify{ id = "seed", text = ui.seedLabel(run and run.seeds, n) }
       dlg:repaint()
     end,
   }
+  dlg:label{ id = "seed", text = "Seed: click a variant" }
   dlg:button{ text = "< Back", onclick = function()
     dlg:close()
     showHistory(client)

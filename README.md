@@ -43,11 +43,16 @@ respond in seconds.
 5. The **Background** option controls transparency: Auto detects and strips
    a uniform background, Remove strips the dominant border color even when
    detection is unsure, Keep leaves the image fully opaque.
-6. **History** opens past generations (stored in `output/`), newest first:
-   a scrollable list (or a 3-column grid — toggle at the bottom); click a
+6. **Seed** is blank by default, so every run rolls fresh numbers. Each
+   variant gets its own seed: click one in the Results window to read it,
+   paste it into Seed to get that exact sprite back, or keep the seed and
+   change the prompt slightly for a near-miss variation. Seeds are stored
+   in `settings.json` next to the images and shown again in History.
+7. **History** opens past generations (stored in `output/`), newest first:
+   a scrollable list (or a 3-column grid - toggle at the bottom); click a
    run to see its variants, click a variant to insert it as a layer.
-7. Rotate / Instruct tips: name the subject explicitly (e.g.
-   "four-legged brown horse" — a generic "character" mutates it), use the
+8. Rotate / Instruct tips: name the subject explicitly (e.g.
+   "four-legged brown horse" - a generic "character" mutates it), use the
    Extra field for refinements, and enable Mirror symmetry for front/back
    views.
 

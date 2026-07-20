@@ -30,7 +30,7 @@ function M.request(payload, callbacks)
             callbacks.onprogress(msg.value, msg.stage)
           end
         elseif msg.type == "result" then
-          finish(); callbacks.onresult(msg.images)
+          finish(); callbacks.onresult(msg.images, msg.seeds)
         elseif msg.type == "error" then
           finish(); callbacks.onerror(msg.message)
         end

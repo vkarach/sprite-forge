@@ -49,7 +49,7 @@ def _prune_raw(keep=RAW_KEEP):
                 log.debug("could not prune %s", f)
 
 
-def _save_debug(req, raw_images, final_images):
+def _save_debug(req, raw_images, final_images, seeds=None):
     """One folder per request: raw originals, final sprites, settings."""
     if not DEBUG_SAVE:
         return
@@ -64,7 +64,8 @@ def _save_debug(req, raw_images, final_images):
             img.save(folder / f"final_{n}.png")
         meta = {"mode": req.mode, "prompt": req.prompt,
                 "variants": req.variants,
-                "target_size": list(req.target_size)}
+                "target_size": list(req.target_size),
+                "seeds": seeds or []}
         (folder / "settings.json").write_text(
             json.dumps(meta, indent=2), encoding="utf-8")
         _prune_raw()
@@ -96,6 +97,7 @@ def _history_msg(offset, limit, preview=False):
                          "mode": meta.get("mode", "?"),
                          "prompt": meta.get("prompt", ""),
                          "count": len(files),
+                         "seeds": meta.get("seeds", []),
                          "images": images})
     return json.dumps({"type": "history", "total": len(folders),
                        "offset": offset, "runs": runs})
@@ -118,24 +120,24 @@ def _run(req, on_progress, on_stage):
         on_progress(v)
         if v >= 0.999:  # decode runs next, inside the pipe call
             on_stage("Decoding images")
+    pipe = models.get("klein", on_stage=on_stage)
+    seeds = pipe.variant_seeds(req.seed, req.variants)
     if req.mode in ("instruct", "edit"):
         # same Klein edit; they differ only in the panel UI
-        pipe = models.get("klein", on_stage=on_stage)
         raw = pipe.edit_by_instruction(req.prompt, req.frames[0].image,
                                        variants=req.variants,
-                                       on_progress=gen_progress)
+                                       on_progress=gen_progress, seeds=seeds)
         palette_src = req.frames[0].image
     elif req.mode == "generate":
-        pipe = models.get("klein", on_stage=on_stage)
         on_stage("Preparing prompt")  # text encode runs before step ticks
         raw = pipe.txt2img(req.prompt, req.target_size,
-                           variants=req.variants, on_progress=gen_progress)
+                           variants=req.variants, on_progress=gen_progress,
+                           seeds=seeds)
         palette_src = None
-    else:  # inpaint — parse_request guarantees image+mask exist
-        pipe = models.get("klein", on_stage=on_stage)
+    else:  # inpaint - parse_request guarantees image+mask exist
         raw = pipe.inpaint(req.prompt, req.frames[0].image,
                            req.frames[0].mask, variants=req.variants,
-                           on_progress=gen_progress)
+                           on_progress=gen_progress, seeds=seeds)
         palette_src = req.frames[0].image
 
     # strip background at full res BEFORE shrinking: after the palette snap
@@ -158,8 +160,8 @@ def _run(req, on_progress, on_stage):
             small = mirror_symmetry(small)
         out.append(small)
         on_stage(f"Post-processing {len(out)}/{len(raw)}")
-    _save_debug(req, raw, out)
-    return out
+    _save_debug(req, raw, out, seeds)
+    return out, seeds
 
 
 class JobCancelled(Exception):
@@ -187,9 +189,9 @@ async def handle_request(ws, req):
     def on_stage(text):
         send(progress_msg(req.id, 0.0, stage=text))
 
-    images = await loop.run_in_executor(
+    images, seeds = await loop.run_in_executor(
         _gpu_executor, functools.partial(_run, req, on_progress, on_stage))
-    await ws.send(result_msg(req.id, images))
+    await ws.send(result_msg(req.id, images, seeds))
 
 
 async def _handler(ws):
