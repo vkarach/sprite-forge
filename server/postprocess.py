@@ -131,8 +131,8 @@ def snap_to_palette(img: Image.Image, palette: list[tuple[int, int, int]]) -> Im
 
 
 def remove_background(img: Image.Image, tolerance: int = 12,
-                      force: bool = False, step_tol: int = 10
-                      ) -> Image.Image:
+                      force: bool = False, step_tol: int = 10,
+                      shade_tol: int = 8) -> Image.Image:
     """Flood-fill the dominant border color to transparent, keeping enclosed
     regions; reverted under 60% border coverage unless `force`."""
     arr = np.asarray(img.convert("RGBA")).astype(int).copy()
@@ -191,8 +191,10 @@ def remove_background(img: Image.Image, tolerance: int = 12,
     if norm == 0:  # black has no chromaticity ray; only black is its shade
         shade = rgbf.max(axis=2) <= tolerance
     else:
+        # a cast shadow keeps the bg hue exactly; a dark tinted subject (navy
+        # suit on gray) does not, so the chroma bound is tight, not tolerance
         s = (rgbf @ bgf) / norm
-        shade = (np.abs(rgbf - s[..., None] * bgf).max(axis=2) <= tolerance) \
+        shade = (np.abs(rgbf - s[..., None] * bgf).max(axis=2) <= shade_tol) \
             & (s >= 0.25) & (s <= 1.15)
 
     k = 5 if min(h, w) >= 128 else 3

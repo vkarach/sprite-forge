@@ -292,6 +292,18 @@ def test_remove_background_eats_bg_shading_touching_cleared_area():
     assert out.getpixel((20, 15)) == (200, 60, 40, 255)
 
 
+def test_remove_background_keeps_dark_tinted_subject_on_gray():
+    # a dark navy subject on a gray bg sits near the bg neutral ray but keeps
+    # its own hue; it is not a cast shadow and must survive
+    img = Image.new("RGBA", (40, 40), (128, 129, 132, 255))
+    for x in range(12, 28):
+        for y in range(8, 34):
+            img.putpixel((x, y), (30, 30, 45, 255))
+    out = remove_background(img, tolerance=16)
+    assert out.getpixel((0, 0))[3] == 0             # bg cleared
+    assert out.getpixel((20, 20)) == (30, 30, 45, 255)
+
+
 def test_downscale_dark_minority_outline_wins_cell():
     # 8x8 cell: 12/64 dark outline pixels (~19%) - majority vote alone
     # would drop the line, the dark bias keeps it
