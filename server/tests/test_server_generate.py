@@ -239,6 +239,29 @@ def test_history_pages_newest_first(server_thread, monkeypatch, tmp_path):
     assert all(len(r["images"]) == 1 for r in msg["runs"])
 
 
+def test_prune_raw_keeps_newest_runs_only(monkeypatch, tmp_path):
+    for n in range(4):
+        folder = tmp_path / f"2026010{n}-000000_generate_x_{n}"
+        folder.mkdir()
+        Image.new("RGBA", (8, 8)).save(folder / "raw_0.png")
+        Image.new("RGBA", (8, 8)).save(folder / "final_0.png")
+    monkeypatch.setattr(srv, "DEBUG_DIR", tmp_path)
+    srv._prune_raw(keep=2)
+    kept = sorted(p.parent.name for p in tmp_path.glob("*/raw_0.png"))
+    assert kept == ["20260102-000000_generate_x_2",
+                    "20260103-000000_generate_x_3"]
+    # finals are the history's source and must survive
+    assert len(list(tmp_path.glob("*/final_0.png"))) == 4
+
+
+def test_run_folders_sees_a_new_run_immediately(monkeypatch, tmp_path):
+    monkeypatch.setattr(srv, "DEBUG_DIR", tmp_path)
+    (tmp_path / "20260101-000000_generate_x_0").mkdir()
+    assert len(srv._run_folders()) == 1
+    (tmp_path / "20260102-000000_generate_x_1").mkdir()
+    assert len(srv._run_folders()) == 2
+
+
 def test_t2i_size_matches_target_aspect():
     from server.instruct import t2i_size
     assert t2i_size((64, 64)) == (512, 512)

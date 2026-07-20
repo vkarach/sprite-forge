@@ -22,12 +22,31 @@ log = logging.getLogger("spriteforge")
 _gpu_executor = ThreadPoolExecutor(max_workers=1)
 DEBUG_DIR = pathlib.Path("output")
 DEBUG_SAVE = True  # tests set this to False so fake runs don't litter output/
+RAW_KEEP = 10  # runs whose full-size raw_*.png survive pruning
 
 
 def _slug(text, max_words=4, max_len=32):
     words = [w for w in "".join(
         c if c.isalnum() or c.isspace() else " " for c in text).split()]
     return "-".join(words[:max_words])[:max_len].rstrip("-") or "no-prompt"
+
+
+def _run_folders():
+    """Run folders newest first; names sort by timestamp."""
+    if not DEBUG_DIR.exists():
+        return []
+    return sorted((p for p in DEBUG_DIR.iterdir() if p.is_dir()),
+                  key=lambda p: p.name, reverse=True)
+
+
+def _prune_raw(keep=RAW_KEEP):
+    """Raws are only useful for tuning postprocess; history shows finals."""
+    for folder in _run_folders()[keep:]:
+        for f in folder.glob("raw_*.png"):
+            try:
+                f.unlink()
+            except OSError:
+                log.debug("could not prune %s", f)
 
 
 def _save_debug(req, raw_images, final_images):
@@ -49,6 +68,7 @@ def _save_debug(req, raw_images, final_images):
                 "target_size": list(req.target_size)}
         (folder / "settings.json").write_text(
             json.dumps(meta, indent=2), encoding="utf-8")
+        _prune_raw()
     except OSError:
         log.exception("debug save failed")  # never break generation over this
 
@@ -58,9 +78,7 @@ def _history_msg(offset, limit, preview=False):
     preview=True sends only the first image of each run (list thumbnails)."""
     from PIL import Image
     from server.protocol import image_to_raw
-    folders = sorted((p for p in DEBUG_DIR.iterdir() if p.is_dir()),
-                     key=lambda p: p.name, reverse=True) \
-        if DEBUG_DIR.exists() else []
+    folders = _run_folders()
     runs = []
     for pos, folder in enumerate(folders[offset:offset + max(limit, 0)],
                                  start=offset):
