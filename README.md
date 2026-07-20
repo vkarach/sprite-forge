@@ -58,4 +58,32 @@ writes raw + postprocessed variants into `output/`.
 
 ## Tests
 
-`.venv\Scripts\python -m pytest server/tests/ --ignore=server/tests/smoke.py`
+Server: `.venv\Scripts\python -m pytest server/tests/ --ignore=server/tests/smoke.py`
+
+Plugin (needs `scoop install lua luacheck`, both user-scoped):
+
+```
+luacheck plugin\*.lua plugin\tests\*.lua
+lua plugin\tests\test_prompt.lua
+lua plugin\tests\test_panel.lua
+```
+
+`luacheck` bundles Lua 5.4, the version Aseprite runs, and `.luacheckrc`
+declares the API globals it injects. `test_panel.lua` loads every module
+against a stubbed Aseprite API and repaints the status canvas in each
+server state, which catches broken cross-module calls without launching
+the editor. Anything about layout or ghosting still needs a real Aseprite.
+
+## Plugin layout
+
+| file | holds |
+|---|---|
+| `main.lua` | entry point, registers the menu command |
+| `dialogs.lua` | the control panel |
+| `results.lua` | results window (fresh variants) |
+| `history.lua` | history list and single-run windows |
+| `ui.lua` | theme colors, checkerboard, variant grid, prompt preview |
+| `sprite.lua` | frame/mask export, inserting variants as layers |
+| `prompt.lua` | prompt assembly and key maps (pure Lua, unit-tested) |
+| `client.lua` | WebSocket client |
+| `base64.lua` | base64 codec |

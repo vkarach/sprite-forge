@@ -1,0 +1,223 @@
+-- Loads every plugin module against a stubbed Aseprite API and drives the
+-- panel's canvas painters in each server/job state. Catches load-time and
+-- paint-time errors (nil arithmetic, missing module fields) without Aseprite.
+-- Run with `lua plugin/tests/test_panel.lua` from the repo root.
+
+local failures = 0
+local function check(what, ok, err)
+  if not ok then
+    failures = failures + 1
+    print(string.format("FAIL %s\n  %s", what, tostring(err)))
+  end
+end
+
+-- ---------------------------------------------------------------- stubs
+local function stubColor(t)
+  t = t or {}
+  return { red = t.r or 0, green = t.g or 0, blue = t.b or 0 }
+end
+Color = setmetatable({}, { __call = function(_, t) return stubColor(t) end })
+Rectangle = setmetatable({}, { __call = function(_, x, y, w, h)
+  return { x = x, y = y, width = w, height = h }
+end })
+Point = setmetatable({}, { __call = function(_, x, y)
+  return { x = x, y = y }
+end })
+ColorMode = { RGB = 0 }
+
+local function stubImage(w, h)
+  return {
+    width = w or 8, height = h or 8, bytes = "",
+    putPixel = function() end, drawPixel = function() end,
+    drawImage = function() end, drawSprite = function() end,
+    saveAs = function() end,
+  }
+end
+Image = setmetatable({}, { __call = function(_, a, b)
+  if type(a) == "table" then return stubImage() end
+  return stubImage(a, b)
+end })
+
+Timer = nil       -- panel must survive a build without timers
+WebSocketMessageType = { OPEN = 0, TEXT = 1, CLOSE = 2 }
+
+-- Scripted socket: REPLY is what the server "answers" on connect, so a test
+-- can walk the panel through checking / online / warming. nil = silence,
+-- which leaves the panel in the state it opens in.
+REPLY = nil
+WebSocket = setmetatable({}, { __call = function(_, t)
+  local ws = { close = function() end, sendText = function() end }
+  ws.connect = function()
+    if not REPLY then return end
+    t.onreceive(WebSocketMessageType.OPEN, "")
+    t.onreceive(WebSocketMessageType.TEXT, "reply")
+  end
+  return ws
+end })
+json = { encode = function() return "{}" end,
+         decode = function() return REPLY end }
+
+app = {
+  fs = { joinPath = function(...)
+           return table.concat({ ... }, "/")
+         end,
+         tempPath = "/tmp" },
+  theme = { color = {} },   -- forces the fallback branch of themeColor
+  pixelColor = { rgba = function() return 0 end },
+  sprite = nil,
+  frame = { frameNumber = 1 },
+  refresh = function() end,
+  transaction = function(_, fn) if fn then fn() end end,
+}
+
+-- Dialog stub: records widgets, exposes .data, and lets tests fire onpaint.
+local lastDialog
+local function stubDialog()
+  local d = { widgets = {}, data = {}, bounds = Rectangle(0, 0, 300, 400) }
+  local function add(kind)
+    return function(self, t)
+      t = t or {}
+      d.widgets[#d.widgets + 1] = { kind = kind, spec = t }
+      if t.id then
+        if t.option ~= nil then d.data[t.id] = t.option
+        elseif t.text ~= nil and kind ~= "button" then d.data[t.id] = t.text
+        elseif t.value ~= nil then d.data[t.id] = t.value
+        elseif t.selected ~= nil then d.data[t.id] = t.selected end
+      end
+      return self
+    end
+  end
+  d.separator, d.combobox, d.entry = add("separator"), add("combobox"), add("entry")
+  d.check, d.number, d.slider = add("check"), add("number"), add("slider")
+  d.button, d.canvas = add("button"), add("canvas")
+  d.modify = function(self, t)
+    if t.text ~= nil and t.id and self.data[t.id] ~= nil then
+      self.data[t.id] = t.text
+    end
+    return self
+  end
+  d.repaint = function() end
+  d.close = function() end
+  d.show = function() end
+  lastDialog = d
+  return d
+end
+Dialog = setmetatable({}, { __call = function(_, _) return stubDialog() end })
+
+-- Graphics context stub: every call the painters make must exist here.
+local function stubGC()
+  return {
+    color = nil, strokeWidth = 0,
+    fillRect = function() end,
+    fillText = function() end,
+    drawImage = function() end,
+    beginPath = function() end,
+    moveTo = function() end,
+    lineTo = function() end,
+    stroke = function() end,
+    measureText = function(_, s) return { width = #s * 6, height = 10 } end,
+  }
+end
+
+-- ---------------------------------------------------------------- tests
+local ok, err = pcall(function()
+  return assert(loadfile("plugin/ui.lua"))("plugin")
+end)
+check("ui.lua loads", ok, err)
+local ui = ok and err or nil
+
+for _, name in ipairs({ "prompt.lua", "sprite.lua", "results.lua",
+                        "history.lua", "dialogs.lua" }) do
+  local good, e = pcall(function()
+    return assert(loadfile("plugin/" .. name))("plugin")
+  end)
+  check(name .. " loads", good, e)
+end
+
+-- ui helpers used by the painters
+if ui then
+  check("runWhen parses a run folder name",
+        ui.runWhen("20260719-013000_generate_x") == "2026-07-19 01:30",
+        ui.runWhen("20260719-013000_generate_x"))
+  check("runWhen tolerates a nameless run", ui.runWhen("weird") == "", "")
+  check("ellipsize leaves short text alone", ui.ellipsize("abc", 10) == "abc", "")
+  check("ellipsize truncates long text",
+        ui.ellipsize("abcdefghij", 4) == "abcd...", ui.ellipsize("abcdefghij", 4))
+
+  local g = ui.gridLayout({}, 600, 440)
+  check("gridLayout survives zero images", g.cols == 1 and g.ch >= 1, "")
+  local imgs = { stubImage(16, 16), stubImage(16, 16), stubImage(16, 16) }
+  g = ui.gridLayout(imgs, 600, 440)
+  check("gridLayout picks 2 columns for 3 images", g.cols == 2, g.cols)
+  check("gridLayout clamps upscaling to 6x", g.scale <= 6, g.scale)
+  -- hit testing must agree with the painted geometry
+  local hit = ui.variantAt({ x = g.cw + 3, y = 3 }, g, imgs)
+  check("variantAt finds the second cell", hit == 2, hit)
+  check("variantAt rejects an empty cell",
+        ui.variantAt({ x = g.cw * 5, y = 3 }, g, imgs) == nil, "")
+  local painted, e2 = pcall(ui.drawVariants, stubGC(), imgs, g, { [1] = true })
+  check("drawVariants paints a selected variant", painted, e2)
+end
+
+-- Drive the panel: open it under each server reply, then repaint the status
+-- canvas in every task mode. The panel keeps its state in closures, so the
+-- server reply at open time is what selects the painter branch.
+local D = assert(loadfile("plugin/dialogs.lua"))("plugin")
+
+local scenarios = {
+  { name = "checking (no reply)", reply = nil },
+  { name = "online", reply = { type = "pong", model = "ready" } },
+  { name = "warming", reply = { type = "pong", model = "loading",
+                                progress = 0.42, stage = "Reading files" } },
+  -- a load that reports no stage label yet must still paint a bar
+  { name = "warming without a stage label",
+    reply = { type = "pong", model = "loading" } },
+}
+
+for _, sc in ipairs(scenarios) do
+  REPLY = sc.reply
+  D._isOpen = false           -- reopen for a fresh set of closures
+  local opened, e3 = pcall(D.open)
+  check("panel opens: " .. sc.name, opened, e3)
+
+  local canvas
+  for _, w in ipairs(lastDialog and lastDialog.widgets or {}) do
+    if w.kind == "canvas" and w.spec.id == "view" then canvas = w.spec end
+  end
+  check("panel has a status canvas: " .. sc.name, canvas ~= nil, "")
+
+  if canvas then
+    for _, mode in ipairs({ "Generate", "Edit with AI", "Inpaint Selection",
+                            "Rotate / Instruct" }) do
+      lastDialog.data.mode = mode
+      local good, e4 = pcall(canvas.onpaint, { context = stubGC() })
+      check(sc.name .. " paints in mode " .. mode, good, e4)
+      local clicked, e5 = pcall(canvas.onmouseup, { x = 50, y = 20 })
+      check(sc.name .. " handles a click in mode " .. mode, clicked, e5)
+    end
+  end
+end
+
+-- With a sprite open the checklist takes its other branch (requirements met).
+REPLY = { type = "pong", model = "ready" }
+app.sprite = { width = 32, height = 32,
+               selection = { isEmpty = false,
+                             contains = function() return true end } }
+D._isOpen = false
+local withSprite, e6 = pcall(D.open)
+check("panel opens with a sprite", withSprite, e6)
+for _, w in ipairs(lastDialog and lastDialog.widgets or {}) do
+  if w.kind == "canvas" and w.spec.id == "view" then
+    lastDialog.data.mode = "Inpaint Selection"
+    lastDialog.data.prompt = "a red roof"
+    local good, e7 = pcall(w.spec.onpaint, { context = stubGC() })
+    check("checklist paints with all requirements met", good, e7)
+  end
+end
+
+if failures == 0 then
+  print("panel: all tests passed")
+else
+  print(failures .. " failure(s)")
+  os.exit(1)
+end
