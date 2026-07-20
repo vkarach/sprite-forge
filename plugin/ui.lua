@@ -112,14 +112,13 @@ function U.variantAt(ev, g, imgs, yOffset)
   return imgs[n] and n or nil
 end
 
--- Seed of variant n, or the run's first seed when nothing is picked yet.
-function U.seedLabel(seeds, n)
-  if not seeds or #seeds == 0 then return "Seed: not reported by the server" end
-  if n and seeds[n] then
-    return string.format("Seed of variant %d: %d  (paste into Seed to redo it)",
-                         n, seeds[n])
-  end
-  return "Seed: " .. tostring(seeds[1]) .. "  (click a variant for its own)"
+-- Clean integer seed of variant n (or the run's first seed), "" when none.
+-- JSON hands the number back as a float, hence math.floor + %d, not tostring.
+function U.seedText(seeds, n)
+  if not seeds or #seeds == 0 then return "" end
+  local s = n and seeds[n] or (n == nil and seeds[1])
+  if not s then return "" end
+  return string.format("%d", math.floor(s))
 end
 
 -- "20260719-013000_..." -> "2026-07-19 01:30"; "" when the name has no stamp.

@@ -25,11 +25,15 @@ function R.showResults(imgs, seeds, onInserted)
       if not n then return end
       local added = sprite.toggleVariant(inserted, n, imgs[n], "SpriteForge ")
       if onInserted then onInserted(n, added) end
-      dlg:modify{ id = "seed", text = ui.seedLabel(seeds, n) }
+      -- entry, not label: its width is fixed, so setting the text never
+      -- relayouts the window (a label would resize it and leave a ghost)
+      dlg:modify{ id = "seed", text = ui.seedText(seeds, n) }
       dlg:repaint()
     end,
   }
-  dlg:label{ id = "seed", text = ui.seedLabel(seeds, nil) }
+  -- read the number here, select it and Ctrl+C; Aseprite has no text clipboard
+  dlg:entry{ id = "seed", label = "Seed (click a variant):",
+             text = ui.seedText(seeds, nil) }
   dlg:button{ text = "Close" }
   dlg:show{ wait = true }  -- opened from a WS callback, no nested modal loop
   app.refresh()

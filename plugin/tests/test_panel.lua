@@ -169,20 +169,23 @@ if ui then
   check("drawVariants paints a selected variant", painted, e2)
 end
 
--- Seed labels: a run from before seeds existed must not blow up the window.
+-- Seed text: the copyable field must be a clean integer, empty when unknown.
 if ui then
-  check("seedLabel handles a server that reported none",
-        ui.seedLabel(nil, 1):find("not reported") ~= nil, ui.seedLabel(nil, 1))
-  check("seedLabel handles an empty seed list",
-        ui.seedLabel({}, 1):find("not reported") ~= nil, ui.seedLabel({}, 1))
-  check("seedLabel names the picked variant",
-        ui.seedLabel({ 10, 11, 12 }, 2):find("11") ~= nil,
-        ui.seedLabel({ 10, 11, 12 }, 2))
-  check("seedLabel falls back to the first seed",
-        ui.seedLabel({ 10, 11 }, nil):find("10") ~= nil,
-        ui.seedLabel({ 10, 11 }, nil))
-  check("seedLabel survives a variant with no seed of its own",
-        type(ui.seedLabel({ 10 }, 5)) == "string", "")
+  check("seedText is empty when the server reported none",
+        ui.seedText(nil, 1) == "" and ui.seedText({}, 1) == "", "")
+  check("seedText names the picked variant",
+        ui.seedText({ 10, 11, 12 }, 2) == "11", ui.seedText({ 10, 11, 12 }, 2))
+  check("seedText falls back to the first seed",
+        ui.seedText({ 10, 11 }, nil) == "10", ui.seedText({ 10, 11 }, nil))
+  check("seedText is empty for a variant with no seed of its own",
+        ui.seedText({ 10 }, 5) == "", ui.seedText({ 10 }, 5))
+  -- JSON hands seeds back as floats; the field must not show 1453436395.0
+  check("seedText drops the float .0",
+        ui.seedText({ 1453436395.0 }, 1) == "1453436395",
+        ui.seedText({ 1453436395.0 }, 1))
+  check("seedText keeps a 32-bit seed intact",
+        ui.seedText({ 4294967295.0 }, 1) == "4294967295",
+        ui.seedText({ 4294967295.0 }, 1))
 end
 
 -- Results window: paints and hit-tests with and without seeds.
