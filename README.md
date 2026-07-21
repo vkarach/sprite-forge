@@ -71,7 +71,7 @@ The model (~15 GB) downloads automatically the first time you run a task.
 ## Use
 
 1. Run `start-server.bat` and leave it running (minimize it).
-2. In Aseprite: **Sprite → SpriteForge → Open SpriteForge**. Pick a task,
+2. In Aseprite: **Sprite → SpriteForge...** (or press **F1**). Pick a task,
    fill the fields, press **Run**. Results open in a separate window; click
    a variant to insert it as a new layer.
 3. **Generate** understands full sentences: pick a **View** preset, name the
