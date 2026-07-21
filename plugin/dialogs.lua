@@ -83,9 +83,9 @@ function D.open()
   local function repaint() dlg:repaint() end
 
   local function checkServer()
-    if pingBusy and os.clock() - pingAt < 8 then return end
+    if pingBusy and os.time() - pingAt < 8 then return end
     pingBusy = true
-    pingAt = os.clock()
+    pingAt = os.time()
     client.ping(
       function(model, loadFrac, stage)
         pingBusy = false
@@ -517,6 +517,7 @@ function D.open()
       if pingTimer then pingTimer:stop() end
       if sizeTimer then sizeTimer:stop() end
       if animTimer then animTimer:stop() end
+      client.pingClose()
       if job and state == "running" then job.cancel() end
     end,
   }
