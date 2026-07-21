@@ -48,18 +48,20 @@ function R.showGrid(opts)
       dlg:repaint()
     end,
   }
-  dlg:button{ id = "copyseed", text = "Copy seed", onclick = function()
-    if curSeed ~= "" and ui.copyText(curSeed) then
-      dlg:modify{ id = "copyseed", text = "Copied" }
-    end
-  end }
+  -- Close first, Copy seed last: after picking a variant, copying its seed is
+  -- the primary action, so it sits at the right.
+  dlg:button{ text = "Close" }
   if opts.onBack then
     dlg:button{ text = "< Back", onclick = function()
       dlg:close()
       opts.onBack()
     end }
   end
-  dlg:button{ text = "Close" }
+  dlg:button{ id = "copyseed", text = "Copy seed", onclick = function()
+    if curSeed ~= "" and ui.copyText(curSeed) then
+      dlg:modify{ id = "copyseed", text = "Copied" }
+    end
+  end }
   dlg:show{ wait = true }
   app.refresh()
 end

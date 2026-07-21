@@ -29,7 +29,7 @@ local PAL_FILETYPES = { "gpl", "pal", "png", "aseprite", "ase", "act",
 -- Advanced params live in their own modal window so toggling them never
 -- resizes the main panel (Aseprite auto-sizes dialogs to their content).
 local function showAdvanced()
-  local a = Dialog("SpriteForge - Advanced")
+  local a = Dialog{ title = "SpriteForge - Advanced", resizeable = false }
   a:combobox{ id = "background", label = "Background:",
              option = last.background, options = { "Auto", "Remove", "Keep" } }
   a:combobox{ id = "palette", label = "Palette:", option = last.palette,
@@ -512,6 +512,7 @@ function D.open()
 
   dlg = Dialog{
     title = "SpriteForge",
+    resizeable = false,
     onclose = function()
       D._isOpen = false
       if pingTimer then pingTimer:stop() end
@@ -594,19 +595,15 @@ function D.open()
   if Timer then
     pingTimer = Timer{ interval = pingInterval, ontick = checkServer }
     pingTimer:start()
-    -- The Dialog API has no "not resizable" flag; snap the size back if the
-    -- user drags an edge (moving the window stays allowed).
+    -- resizeable=false stops drag-resize; still follow window moves so
+    -- pinDown re-pins the panel at its current spot.
     sizeTimer = Timer{ interval = 0.5, ontick = function()
       local nb = dlg.bounds
       if not baseW then
         baseW, baseH = nb.width, nb.height
         topX, topY = nb.x, nb.y
-      elseif nb.width == baseW and nb.height == baseH
-             and (nb.x ~= topX or nb.y ~= topY) then
+      elseif nb.x ~= topX or nb.y ~= topY then
         topX, topY = nb.x, nb.y  -- the user moved the window; follow it
-      elseif nb.width ~= baseW or nb.height ~= baseH then
-        dlg.bounds = Rectangle(topX, topY, baseW, baseH)  -- undo a drag-resize
-        app.refresh()
       end
       -- Checklist state can change outside the dialog (selection made on
       -- the canvas, sprite closed) - refresh when it actually did.
