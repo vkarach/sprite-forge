@@ -5,6 +5,8 @@ Generate sprites from a text prompt, edit existing sprites with an
 instruction, or redraw a selected region — all running on your own GPU.
 No cloud, no subscription, your pixels never leave your machine.
 
+**[Sample output and how it works → vkarach.github.io/sprite-forge](https://vkarach.github.io/sprite-forge/)**
+
 <!-- Add the screencast GIF here once recorded; see assets/demo.gif -->
 <!-- ![SpriteForge in action](assets/demo.gif) -->
 
