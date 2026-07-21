@@ -195,6 +195,15 @@ async def handle_request(ws, req):
 
 
 async def _handler(ws):
+    try:
+        await _serve_connection(ws)
+    except websockets.exceptions.ConnectionClosed:
+        # the plugin opens a fresh socket per ping/request and drops it without
+        # a close handshake; that is normal, not a handler failure to log
+        log.debug("client closed connection without a close frame")
+
+
+async def _serve_connection(ws):
     async for message in ws:
         try:
             data = json.loads(message)
@@ -226,6 +235,8 @@ async def _handler(ws):
         except JobCancelled:
             log.info("request %s cancelled by client", req.id)
             break  # socket is already closed; stop serving this connection
+        except websockets.exceptions.ConnectionClosed:
+            raise  # client vanished mid-request; _handler logs it at debug
         except Exception as e:  # never die silently
             log.exception("request failed")
             try:
