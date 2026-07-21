@@ -19,6 +19,7 @@ local function showRun(client, offset)
   local CH = 360 + HEAD
 
   local dlg = Dialog("SpriteForge - History run (click to insert / remove)")
+  local setSeed
   local function grid() return ui.gridLayout(imgs, CW, CH - HEAD) end
 
   client.history(offset, 1, false, function(msg)
@@ -59,12 +60,10 @@ local function showRun(client, offset)
       local n = ui.variantAt(ev, grid(), imgs, HEAD)
       if not n then return end
       sprite.toggleVariant(inserted, n, imgs[n], "SpriteForge H")
-      dlg:modify{ id = "seed", text = ui.seedText(run and run.seeds, n) }
-      dlg:repaint()
+      setSeed(ui.seedText(run and run.seeds, n))
     end,
   }
-  -- entry, not label: fixed width, so updating it never relayouts the window
-  dlg:entry{ id = "seed", label = "Seed (click a variant):", text = "" }
+  setSeed = ui.seedRow(dlg, CW)
   dlg:button{ text = "< Back", onclick = function()
     dlg:close()
     showHistory(client)

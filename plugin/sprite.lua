@@ -72,6 +72,44 @@ function S.imageFromPayload(spec, n)
   return img
 end
 
+-- {r,g,b} rows of an Aseprite Palette, or nil if empty.
+function S.paletteColors(pal)
+  if not pal then return nil end
+  local colors = {}
+  for i = 0, #pal - 1 do
+    local c = pal:getColor(i)
+    colors[#colors + 1] = { c.red, c.green, c.blue }
+  end
+  return #colors > 0 and colors or nil
+end
+
+-- Only the palette swatches selected in Aseprite's color bar; nil if none.
+function S.selectedPalette()
+  local spr = app.sprite
+  local idx = app.range and app.range.colors
+  if not spr or not idx or #idx == 0 then return nil end
+  local pal = spr.palettes[1]
+  local colors = {}
+  for _, i in ipairs(idx) do
+    local c = pal:getColor(i)
+    colors[#colors + 1] = { c.red, c.green, c.blue }
+  end
+  return #colors > 0 and colors or nil
+end
+
+-- Active sprite's whole palette; nil when no sprite is open.
+function S.spritePalette()
+  local spr = app.sprite
+  return spr and S.paletteColors(spr.palettes[1]) or nil
+end
+
+-- Palette loaded from a .gpl/.pal/.png/.aseprite file; nil on failure.
+function S.paletteFromFile(path)
+  if not path or path == "" then return nil end
+  local ok, pal = pcall(function() return Palette{ fromFile = path } end)
+  return (ok and pal) and S.paletteColors(pal) or nil
+end
+
 function S.insertAsLayer(img, name)
   local spr = app.sprite
   if not spr then

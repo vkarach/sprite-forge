@@ -146,6 +146,32 @@ def test_rejects_target_size_out_of_range():
             }))
 
 
+def test_parse_palette_pins_colors():
+    req = parse_request(json.dumps({
+        "id": "p", "mode": "generate", "prompt": "sword",
+        "target_size": [64, 64], "palette": [[255, 0, 0], [0, 128, 255]],
+    }))
+    assert req.palette == [(255, 0, 0), (0, 128, 255)]
+
+
+def test_parse_palette_defaults_to_none():
+    req = parse_request(json.dumps({
+        "id": "p", "mode": "generate", "prompt": "sword",
+        "target_size": [64, 64],
+    }))
+    assert req.palette is None
+
+
+def test_parse_palette_rejects_bad_shapes():
+    for bad in ([], [[255, 0]], [[256, 0, 0]], [[-1, 0, 0]], [["a", 0, 0]],
+                [[0, 0, 0]] * 257):
+        with pytest.raises(ProtocolError):
+            parse_request(json.dumps({
+                "id": "p", "mode": "generate", "prompt": "sword",
+                "target_size": [64, 64], "palette": bad,
+            }))
+
+
 def test_clamps_variants_to_the_slider_range():
     def variants(n):
         return parse_request(json.dumps({

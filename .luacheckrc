@@ -14,6 +14,6 @@ files["plugin/main.lua"] = { globals = { "init", "exit" }, unused_args = false }
 files["plugin/tests/*.lua"] = {
   globals = { "app", "Color", "Rectangle", "Point", "Image", "ColorMode",
               "Dialog", "Timer", "WebSocket", "WebSocketMessageType", "json",
-              "REPLY", "io", "Sprite" },
+              "REPLY", "io", "Sprite", "Palette" },
 }
 max_line_length = 100

@@ -142,7 +142,8 @@ def _run(req, on_progress, on_stage):
 
     # strip background at full res BEFORE shrinking: after the palette snap
     # the flood ate subject pixels that snapped near background colors
-    pal = sprite_palette(palette_src) if palette_src is not None else None
+    pal = req.palette or (
+        sprite_palette(palette_src) if palette_src is not None else None)
     out = []
     on_stage(f"Post-processing 0/{len(raw)}")
     for img in raw:

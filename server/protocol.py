@@ -32,6 +32,7 @@ class Request:
     symmetry: bool = False
     background: str = "auto"
     seed: int | None = None  # None = roll a fresh one per variant
+    palette: list[tuple[int, int, int]] | None = None  # None = auto palette
     frames: list[Frame] = field(default_factory=list)
 
 
@@ -60,6 +61,26 @@ def image_from_b64(s: str) -> Image.Image:
         return Image.open(io.BytesIO(base64.b64decode(s))).convert("RGBA")
     except Exception as e:
         raise ProtocolError(f"invalid image data: {e}") from e
+
+
+def _parse_palette(raw) -> list[tuple[int, int, int]] | None:
+    """Pinned colors as [[r,g,b],...]; None means let the server derive one."""
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not raw:
+        raise ProtocolError("palette must be a non-empty list of [r,g,b]")
+    if len(raw) > 256:
+        raise ProtocolError(f"palette has {len(raw)} colors, max 256")
+    out = []
+    for c in raw:
+        try:
+            r, g, b = int(c[0]), int(c[1]), int(c[2])
+        except (TypeError, ValueError, IndexError, KeyError) as e:
+            raise ProtocolError(f"palette entry must be [r,g,b]: {e}") from e
+        if not all(0 <= v <= 255 for v in (r, g, b)):
+            raise ProtocolError(f"palette rgb must be 0..255, got {(r, g, b)}")
+        out.append((r, g, b))
+    return out
 
 
 def parse_request(text: str) -> Request:
@@ -122,6 +143,7 @@ def parse_request(text: str) -> Request:
         symmetry=bool(data.get("symmetry", False)),
         background=background,
         seed=seed,
+        palette=_parse_palette(data.get("palette")),
         frames=frames,
     )
 

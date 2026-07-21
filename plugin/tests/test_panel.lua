@@ -49,6 +49,15 @@ Sprite = setmetatable({}, { __call = function(_, w, h)
            deleteLayer = function() end, close = function() end }
 end })
 
+local function stubPalette(n)
+  local t = setmetatable({}, { __len = function() return n end })
+  t.getColor = function(_, i) return stubColor{ r = i, g = i * 2, b = i * 3 } end
+  return t
+end
+Palette = setmetatable({}, { __call = function(_, t)
+  return (t and t.fromFile) and stubPalette(3) or stubPalette(0)
+end })
+
 Timer = nil       -- panel must survive a build without timers
 WebSocketMessageType = { OPEN = 0, TEXT = 1, CLOSE = 2 }
 
@@ -77,6 +86,7 @@ app = {
   frame = { frameNumber = 1 },
   refresh = function() end,
   transaction = function(_, fn) if fn then fn() end end,
+  clipboard = { text = "" },
 }
 
 -- Dialog stub: records widgets, exposes .data, and lets tests fire onpaint.
@@ -99,7 +109,8 @@ local function stubDialog()
   d.separator, d.combobox, d.entry = add("separator"), add("combobox"), add("entry")
   d.label = add("label")
   d.check, d.number, d.slider = add("check"), add("number"), add("slider")
-  d.button, d.canvas = add("button"), add("canvas")
+  d.button, d.canvas, d.file = add("button"), add("canvas"), add("file")
+  d.newrow = add("newrow")
   d.modify = function(self, t)
     if t.text ~= nil and t.id and self.data[t.id] ~= nil then
       self.data[t.id] = t.text
@@ -193,18 +204,30 @@ do
   local R = assert(loadfile("plugin/results.lua"))("plugin")
   local imgs = { stubImage(16, 16), stubImage(16, 16) }
   for _, seeds in ipairs({ { 101, 102 }, {} }) do
+    app.clipboard.text = ""
     local ok4, e = pcall(R.showResults, imgs, seeds, function() end)
     check("results window opens (" .. #seeds .. " seeds)", ok4, e)
-    local canvas
+    local grid, seedbar, copy
     for _, w in ipairs(lastDialog.widgets) do
-      if w.kind == "canvas" then canvas = w.spec end
+      if w.kind == "canvas" and w.spec.id == "grid" then grid = w.spec end
+      if w.kind == "canvas" and w.spec.id == "seedbar" then seedbar = w.spec end
+      if w.kind == "button" and w.spec.id == "copyseed" then copy = w.spec end
     end
-    check("results window has a canvas", canvas ~= nil, "")
-    if canvas then
-      local painted, e5 = pcall(canvas.onpaint, { context = stubGC() })
+    check("results window has grid + seed canvases and a copy button",
+          grid and seedbar and copy, "")
+    if grid then
+      local painted, e5 = pcall(grid.onpaint, { context = stubGC() })
       check("results window paints", painted, e5)
-      local clicked, e6 = pcall(canvas.onmouseup, { x = 3, y = 3 })
+      local sp, e7 = pcall(seedbar.onpaint, { context = stubGC() })
+      check("results seed bar paints", sp, e7)
+      local clicked, e6 = pcall(grid.onmouseup, { x = 3, y = 3 })
       check("results window handles a click", clicked, e6)
+      pcall(copy.onclick)
+      -- the click above picked variant 1; Copy must reach the clipboard
+      if #seeds > 0 then
+        check("copy seed writes the picked seed to the clipboard",
+              app.clipboard.text == "101", app.clipboard.text)
+      end
     end
   end
 end
@@ -261,6 +284,34 @@ do
   check("exportMask returns nil without a selection", S.exportMask() == nil, "")
   Image, io.open = realImage, realOpen
   app.sprite = nil
+
+  -- Pinned palette: rows of {r,g,b} from the sprite palette or a file.
+  check("spritePalette is nil with no sprite", S.spritePalette() == nil, "")
+  app.sprite = { palettes = { stubPalette(3) } }
+  local sp = S.spritePalette()
+  check("spritePalette returns one row per color", sp and #sp == 3, sp and #sp)
+  check("spritePalette rows are {r,g,b}",
+        sp and sp[2][1] == 1 and sp[2][2] == 2 and sp[2][3] == 3,
+        sp and table.concat(sp[2], ","))
+  check("selectedPalette is nil with no sprite", S.selectedPalette() == nil, "")
+  app.sprite = { palettes = { stubPalette(5) } }
+  app.range = { colors = { 0, 2, 4 } }
+  local selp = S.selectedPalette()
+  check("selectedPalette returns one row per selected swatch",
+        selp and #selp == 3, selp and #selp)
+  app.range = { colors = {} }
+  check("selectedPalette is nil when no swatch is selected",
+        S.selectedPalette() == nil, "")
+  -- Sprite palette is the whole palette regardless of the swatch selection.
+  app.range = { colors = { 1 } }
+  local whole = S.spritePalette()
+  check("spritePalette returns the whole palette", whole and #whole == 5,
+        whole and #whole)
+  app.sprite, app.range = nil, nil
+  local fp = S.paletteFromFile("colors.gpl")
+  check("paletteFromFile reads a palette", fp and #fp == 3, fp and #fp)
+  check("paletteFromFile is nil for a blank path",
+        S.paletteFromFile("") == nil, "")
 end
 
 -- State lives in closures, so the reply at open time selects the branch.
@@ -296,6 +347,32 @@ for _, sc in ipairs(scenarios) do
       check(sc.name .. " paints in mode " .. mode, good, e4)
       local clicked, e5 = pcall(canvas.onmouseup, { x = 50, y = 20 })
       check(sc.name .. " handles a click in mode " .. mode, clicked, e5)
+    end
+  end
+end
+
+-- The Advanced button opens its own modal window (so the main panel never
+-- resizes); opening it and pressing OK must not error.
+REPLY = { type = "pong", model = "ready" }
+D._isOpen = false
+pcall(D.open)
+do
+  local advbtn
+  for _, w in ipairs(lastDialog and lastDialog.widgets or {}) do
+    if w.kind == "button" and w.spec.id == "advbtn" then advbtn = w.spec end
+  end
+  check("panel has an Advanced button", advbtn ~= nil, "")
+  if advbtn then
+    local opened, e = pcall(advbtn.onclick)
+    check("Advanced window opens", opened, e)
+    local ok2
+    for _, w in ipairs(lastDialog.widgets) do
+      if w.kind == "button" and w.spec.id == "ok" then ok2 = w.spec end
+    end
+    check("Advanced window has an OK button", ok2 ~= nil, "")
+    if ok2 then
+      local saved, e2 = pcall(ok2.onclick)
+      check("Advanced OK saves without error", saved, e2)
     end
   end
 end

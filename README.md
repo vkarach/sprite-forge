@@ -77,11 +77,17 @@ The model (~15 GB) downloads automatically the first time you run a task.
    details if needed — the panel shows the exact text it will send.
 4. **Edit / Inpaint** take instructions, not a strength slider: say what to
    change and how much. Inpaint only touches the selection.
-5. **Background**: Auto detects and strips a uniform background, Remove
+5. **Advanced...** opens a separate window with Background, Palette, and Seed,
+   so the main panel never resizes.
+6. **Background**: Auto detects and strips a uniform background, Remove
    strips the dominant border color, Keep leaves it fully opaque.
-6. **History** browses past generations (stored in `output/`), newest first;
+7. **Palette**: Auto derives colors per result; Current palette pins output to
+   the open sprite's whole palette; Selected colors pins to only the swatches
+   highlighted in the palette bar; Palette file pins to a `.gpl`/`.pal`/`.png`
+   file so a batch of sprites shares one set of colors.
+8. **History** browses past generations (stored in `output/`), newest first;
    click a run to see its variants, click a variant to insert it.
-7. **Rotate / Instruct**: name the subject explicitly ("four-legged brown
+9. **Rotate / Instruct**: name the subject explicitly ("four-legged brown
    horse", not "character"), and enable Mirror symmetry for front/back views.
 
 ## How it works

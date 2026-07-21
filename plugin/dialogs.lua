@@ -16,9 +16,43 @@ local D = {}
 -- Settings survive across reopenings of the panel.
 local last = { mode = "Generate", prompt = "", w = nil, h = nil,
                variants = 4, background = "Auto", seed = "",
+               palette = "Auto", palfile = "",
                view = "Side view (right)", subject = "character",
                instruction = "", symmetry = false,
                genView = "3/4 view", genSubject = "", genDetails = "" }
+
+local PALETTE_OPTS = { "Auto", "Current palette", "Selected colors",
+                       "Palette file" }
+local PAL_FILETYPES = { "gpl", "pal", "png", "aseprite", "ase", "act",
+                        "col", "hex" }
+
+-- Advanced params live in their own modal window so toggling them never
+-- resizes the main panel (Aseprite auto-sizes dialogs to their content).
+local function showAdvanced()
+  local a = Dialog("SpriteForge - Advanced")
+  a:combobox{ id = "background", label = "Background:",
+             option = last.background, options = { "Auto", "Remove", "Keep" } }
+  a:combobox{ id = "palette", label = "Palette:", option = last.palette,
+             options = PALETTE_OPTS, onchange = function()
+               a:modify{ id = "palfile",
+                         visible = a.data.palette == "Palette file" }
+               app.refresh()
+             end }
+  a:file{ id = "palfile", label = "Palette file:", open = true,
+          filename = last.palfile, filetypes = PAL_FILETYPES,
+          visible = last.palette == "Palette file" }
+  a:entry{ id = "seed", label = "Seed:", text = last.seed or "" }
+  a:separator{}
+  a:button{ id = "ok", text = "OK", focus = true, onclick = function()
+    last.background = a.data.background
+    last.palette = a.data.palette
+    last.palfile = a.data.palfile
+    last.seed = a.data.seed
+    a:close()
+  end }
+  a:button{ text = "Cancel", onclick = function() a:close() end }
+  a:show{ wait = true }
+end
 
 local STATUS_W, STATUS_H = 282, 58  -- status line + up to 3 checklist rows
 
@@ -41,7 +75,8 @@ function D.open()
   local updateHint, retunePing, syncButtons
   local sizeTimer
   local animTimer   -- drives the busy animation only while running
-  local baseW, baseH  -- nil = re-capture on next guard tick
+  local baseW, baseH  -- baseW fixed after open; baseH nil = re-capture height
+  local topX, topY    -- anchored top-left so relayouts grow only downward
 
   local dlg
 
@@ -178,6 +213,15 @@ function D.open()
                              or "Complete the checklist:")
   end
 
+  -- After a relayout, immediately restore the fixed width and top-left so the
+  -- panel only grows/shrinks downward instead of jumping or resizing sideways.
+  local function pinDown()
+    app.refresh()
+    local nb = dlg.bounds
+    baseH = nb.height
+    dlg.bounds = Rectangle(topX or nb.x, topY or nb.y, baseW or nb.width, baseH)
+  end
+
   local function applyModeVisibility()
     local m = dlg.data.mode
     local instruct = m == "Rotate / Instruct"
@@ -193,27 +237,47 @@ function D.open()
     dlg:modify{ id = "subject", visible = instruct }
     dlg:modify{ id = "instruction", visible = instruct }
     dlg:modify{ id = "symmetry", visible = instruct }
-    app.refresh()
-    baseW, baseH = nil, nil  -- legit relayout: size guard re-captures
+    pinDown()
     updateHint()
   end
 
+  -- Auto-default knobs stay hidden until the user opts into Advanced.
   local function startRun()
     if state == "running" then return end
     local d = dlg.data
     last.mode = d.mode; last.prompt = d.prompt
     last.w = d.w; last.h = d.h
     last.variants = d.variants
-    last.background = d.background
-    last.seed = d.seed
 
     local mode = P.MODE_KEY[d.mode]
     local payload = { id = sprite.newId(), mode = mode,
                       variants = d.variants, frames = {},
-                      background = P.BG_KEY[d.background] or "auto" }
+                      background = P.BG_KEY[last.background] or "auto" }
     -- blank Seed means "roll one"; the field is text so it can stay empty
-    local seed = tonumber((d.seed or ""):match("^%s*(.-)%s*$"))
+    local seed = tonumber((last.seed or ""):match("^%s*(.-)%s*$"))
     if seed then payload.seed = math.floor(seed) end
+    if last.palette == "Current palette" then
+      local pal = sprite.spritePalette()
+      if not pal then
+        setState("error", "Open the sprite whose palette to pin first.")
+        return
+      end
+      payload.palette = pal
+    elseif last.palette == "Selected colors" then
+      local pal = sprite.selectedPalette()
+      if not pal then
+        setState("error", "Select one or more swatches in the palette first.")
+        return
+      end
+      payload.palette = pal
+    elseif last.palette == "Palette file" then
+      local pal = sprite.paletteFromFile(last.palfile)
+      if not pal then
+        setState("error", "Pick a readable palette file (.gpl/.pal/.png).")
+        return
+      end
+      payload.palette = pal
+    end
     if mode == "instruct" then
       local spr = app.sprite
       if not spr then
@@ -498,10 +562,7 @@ function D.open()
   dlg:separator{ text = "Options" }
   dlg:slider{ id = "variants", label = "Variants:", min = 1, max = 8,
               value = last.variants }
-  dlg:combobox{ id = "background", label = "Background:",
-                option = last.background,
-                options = { "Auto", "Remove", "Keep" } }
-  dlg:entry{ id = "seed", label = "Seed:", text = last.seed or "" }
+  dlg:button{ id = "advbtn", text = "Advanced...", onclick = showAdvanced }
   dlg:separator{ text = "Status" }
   dlg:canvas{
     id = "view", width = STATUS_W, height = STATUS_H,
@@ -538,8 +599,12 @@ function D.open()
       local nb = dlg.bounds
       if not baseW then
         baseW, baseH = nb.width, nb.height
+        topX, topY = nb.x, nb.y
+      elseif nb.width == baseW and nb.height == baseH
+             and (nb.x ~= topX or nb.y ~= topY) then
+        topX, topY = nb.x, nb.y  -- the user moved the window; follow it
       elseif nb.width ~= baseW or nb.height ~= baseH then
-        dlg.bounds = Rectangle(nb.x, nb.y, baseW, baseH)
+        dlg.bounds = Rectangle(topX, topY, baseW, baseH)  -- undo a drag-resize
         app.refresh()
       end
       -- Checklist state can change outside the dialog (selection made on
@@ -553,6 +618,12 @@ function D.open()
   end
   checkServer()
   dlg:show{ wait = false }
+  -- Capture the collapsed size now so pinDown has a fixed width from the first
+  -- toggle, not only after the size guard's first tick.
+  if dlg.bounds.width > 0 then
+    baseW, baseH = dlg.bounds.width, dlg.bounds.height
+    topX, topY = dlg.bounds.x, dlg.bounds.y
+  end
 end
 
 return D

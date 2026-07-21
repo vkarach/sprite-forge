@@ -12,6 +12,7 @@ function R.showResults(imgs, seeds, onInserted)
   local inserted = {}  -- variant index -> {sprite, layer}, toggled by clicks
 
   local dlg = Dialog("SpriteForge - Results (click to insert / remove)")
+  local setSeed
   dlg:canvas{
     id = "grid", width = W, height = H,
     onpaint = function(ev)
@@ -25,15 +26,10 @@ function R.showResults(imgs, seeds, onInserted)
       if not n then return end
       local added = sprite.toggleVariant(inserted, n, imgs[n], "SpriteForge ")
       if onInserted then onInserted(n, added) end
-      -- entry, not label: its width is fixed, so setting the text never
-      -- relayouts the window (a label would resize it and leave a ghost)
-      dlg:modify{ id = "seed", text = ui.seedText(seeds, n) }
-      dlg:repaint()
+      setSeed(ui.seedText(seeds, n))
     end,
   }
-  -- read the number here, select it and Ctrl+C; Aseprite has no text clipboard
-  dlg:entry{ id = "seed", label = "Seed (click a variant):",
-             text = ui.seedText(seeds, nil) }
+  setSeed = ui.seedRow(dlg, W)
   dlg:button{ text = "Close" }
   dlg:show{ wait = true }  -- opened from a WS callback, no nested modal loop
   app.refresh()
