@@ -26,9 +26,10 @@ P.PRESET_ORDER = { "Side view (right)", "Side view (left)", "Back view",
 -- (a bare "side view" tag is not enough).
 P.GEN_TEMPLATES = {
   ["Side view"] = "A %s, seen exactly from the side at eye level, in strict"
-    .. " profile view: only its side silhouette is visible, the front face"
-    .. " cannot be seen at all. A flat 2D side-scroller game object. The"
-    .. " camera does not look down at it.",
+    .. " left-facing profile: its full side is shown in full color with clear"
+    .. " detail and shading, not a black silhouette, the front face cannot be"
+    .. " seen. A flat 2D side-scroller game object. The camera does not look"
+    .. " down at it.",
   ["Front view"] = "A %s, seen straight from the front at eye level,"
     .. " head-on, perfectly centered.",
   ["3/4 view"] = "A %s in classic three-quarter view game perspective, seen"
