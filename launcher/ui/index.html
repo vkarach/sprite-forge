@@ -3,6 +3,8 @@
 <title>SpriteForge</title>
 <style>
   :root {
+    /* native controls follow the page, not the light system default */
+    color-scheme: dark;
     --bg: #14161c; --panel: #20242f; --line: #2c313d;
     --ink: #d3d7e0; --ink-dim: #8b93a5; --ink-faint: #616a7d;
     --gold: #f2b23c; --danger: #e8705a; --ok: #6fcf7f;
@@ -81,6 +83,17 @@
     letter-spacing: 0.02em; flex: none;
   }
   button.ghost:hover:not(:disabled) { border-color: var(--ink-faint); filter: none; }
+  .opt {
+    display: flex; align-items: center; gap: 10px; margin-top: 14px;
+    padding-top: 13px; border-top: 1px solid var(--line);
+  }
+  .opt label { color: var(--ink-dim); flex: 1; min-width: 0; }
+  .opt select {
+    font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 9px; cursor: pointer; flex: none; max-width: 60%;
+  }
+  .opt select:hover { border-color: var(--ink-faint); }
   .plugin { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .plugin .txt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .plugin .ver { color: var(--ink-faint); }
@@ -117,6 +130,15 @@
   <div class="bar" id="bar"><i id="barfill"></i></div>
   <button id="toggle">START</button>
   <div class="hint" id="hint"></div>
+  <div class="opt">
+    <label for="vram">VRAM mode</label>
+    <select id="vram">
+      <option value="auto">Auto, detect the card</option>
+      <option value="bf16">bf16, 12 GB and up</option>
+      <option value="fp8">fp8, 8 GB, fast</option>
+      <option value="offload">offload, 8 GB, slow</option>
+    </select>
+  </div>
 </div>
 
 <div class="card plugin">
@@ -149,6 +171,8 @@
     $("plug").className = s.plugin_warn ? "ver warn" : "ver";
     $("install").textContent = s.plugin_action;
     $("install").disabled = busy;
+    // never yank the list out from under an open dropdown
+    if (document.activeElement !== $("vram")) $("vram").value = s.vram_mode;
 
     const log = $("log");
     if (log.textContent !== s.log) {
@@ -171,6 +195,8 @@
 
   $("toggle").onclick = () => call(window.pywebview.api.toggle_server);
   $("install").onclick = () => call(window.pywebview.api.install_plugin);
+  $("vram").onchange = async () =>
+    paint(await window.pywebview.api.set_vram_mode($("vram").value));
 
   async function tick() {
     if (busy) return;

@@ -6,7 +6,8 @@ import threading
 import webview
 
 from launcher import plugin_install, server_proc
-from server.config import HOST, load_port, save_port
+from server.config import (HOST, VRAM_MODES, load_port, load_vram_mode,
+                           save_port, save_vram_mode)
 
 VERSION = "0.1.0"
 TITLE = "SpriteForge"
@@ -122,6 +123,17 @@ class Api:
         self.proc.start()
         return self._snapshot()
 
+    def set_vram_mode(self, mode: str) -> dict:
+        if mode not in VRAM_MODES:
+            return self._snapshot()
+        save_vram_mode(mode)
+        # the server reads the mode once, while loading the model
+        if self.proc.is_alive():
+            self._say("VRAM mode saved. Restart the server to apply it.")
+        else:
+            self._say("")
+        return self._snapshot()
+
     def install_plugin(self) -> dict:
         dest = plugin_install.extensions_dir()
         if dest is None:
@@ -177,6 +189,7 @@ class Api:
             "can_start": server_proc.venv_python(self.root) is not None,
             "hint": self.hint,
             "hint_bad": self.hint_bad,
+            "vram_mode": load_vram_mode(),
             "plugin_text": text,
             "plugin_warn": warn,
             "plugin_action": action,
