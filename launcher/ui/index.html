@@ -83,21 +83,29 @@
     letter-spacing: 0.02em; flex: none;
   }
   button.ghost:hover:not(:disabled) { border-color: var(--ink-faint); filter: none; }
-  .opt {
-    display: flex; align-items: center; gap: 10px; margin-top: 14px;
-    padding-top: 13px; border-top: 1px solid var(--line);
+  .opt { margin-top: 15px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .opt label {
+    display: block; color: var(--ink-dim); font-size: 12px;
+    letter-spacing: 0.04em; margin-bottom: 7px;
   }
-  .opt label { color: var(--ink-dim); flex: 1; min-width: 0; }
+  /* full width: a select sized by its longest option jumps around as the
+     label changes, and clips whatever does not fit */
   .opt select {
-    font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+    width: 100%; font-family: var(--mono); font-size: 13px; color: var(--ink);
     background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
-    padding: 6px 9px; cursor: pointer; flex: none; max-width: 60%;
+    padding: 9px 10px; cursor: pointer;
   }
   .opt select:hover { border-color: var(--ink-faint); }
-  .plugin { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .plugin .txt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .plugin .ver { color: var(--ink-faint); }
+  /* stacked, not a single squat line: the card reads as a block like the
+     server card above it */
+  .plugin .txt {
+    display: block; font-size: 12px; color: var(--ink-dim);
+    letter-spacing: 0.04em; margin-bottom: 7px;
+  }
+  .plugin .ver { display: block; color: var(--ink); font-size: 14px;
+                 margin-top: 5px; letter-spacing: 0; overflow-wrap: anywhere; }
   .plugin .ver.warn { color: var(--gold); }
+  .plugin button { width: 100%; margin-top: 13px; }
   details { margin-top: 16px; }
   summary { cursor: pointer; color: var(--ink-dim); list-style: none; }
   summary::-webkit-details-marker { display: none; }
@@ -133,16 +141,17 @@
   <div class="opt">
     <label for="vram">VRAM mode</label>
     <select id="vram">
-      <option value="auto">Auto, detect the card</option>
-      <option value="bf16">bf16, 12 GB and up</option>
-      <option value="fp8">fp8, 8 GB, fast</option>
-      <option value="offload">offload, 8 GB, slow</option>
+      <option value="auto">Auto · detect the card</option>
+      <option value="bf16">bf16 · 12 GB and up</option>
+      <option value="fp8">fp8 · 8 GB, fast</option>
+      <option value="offload">offload · 8 GB, slow</option>
     </select>
   </div>
 </div>
 
 <div class="card plugin">
-  <div class="txt">Aseprite plugin <span class="ver" id="plug"></span></div>
+  <span class="txt">ASEPRITE PLUGIN</span>
+  <span class="ver" id="plug"></span>
   <button class="ghost" id="install">Install</button>
 </div>
 

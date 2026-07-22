@@ -21,6 +21,11 @@ OFFLINE = {"state": "offline", "progress": 0.0, "stage": None}
 NO_VENV = ("No .venv found in {root}. "
            "Build the environment the way the README describes.")
 
+# The window must never be an attribute of Api: pywebview walks the js_api
+# object to expose it, and walking a Window recurses through
+# native.AccessibilityObject until the UI thread is wedged.
+_window = None
+
 
 def app_root() -> pathlib.Path:
     if getattr(sys, "frozen", False):
@@ -60,7 +65,6 @@ class Api:
         self.stopped_by_user = False
         self.hint = ""
         self.hint_bad = False
-        self.window = None
         self.height = HEIGHT_COMPACT
         if server_proc.venv_python(self.root) is None:
             self._say(NO_VENV.format(root=self.root), bad=True)
@@ -93,12 +97,12 @@ class Api:
         open or a hint has appeared, so it measures and we follow. Width
         never changes, and HEIGHT_COMPACT is the floor.
         """
-        if not self.window or not delta:
+        if not _window or not delta:
             return
         target = max(HEIGHT_COMPACT, self.height + int(delta))
         if target != self.height:
             self.height = target
-            self.window.resize(WIDTH, target)
+            _window.resize(WIDTH, target)
 
     def toggle_server(self) -> dict:
         if self.proc.is_alive():
@@ -198,12 +202,13 @@ class Api:
 
 
 def main() -> None:
+    global _window
     api = Api()
     window = webview.create_window(TITLE, ui_file(), js_api=api,
                                    width=WIDTH, height=HEIGHT_COMPACT,
                                    min_size=MIN_SIZE,
                                    background_color="#14161c")
-    api.window = window
+    _window = window
     # a window the user dragged taller must not confuse the next fit
     window.events.resized += lambda width, height: setattr(api, "height",
                                                            height)
