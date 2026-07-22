@@ -22,7 +22,28 @@ T2I_SUFFIX = (" Flat 2D pixel art game sprite, crisp pixels, flat colors,"
 # starts paging VRAM through system RAM (observed: 10x+ slowdown).
 MAX_SIDE = 512
 
+# bf16 peaks ~13 GB; only 12+ GB cards get it. Below that, offload is the
+# lossless default (fp8 stays behind an explicit override until verified).
+BF16_MIN_FREE = 11 * 1024 ** 3
+
 log = logging.getLogger("spriteforge.instruct")
+
+
+def resolve_mode(mode: str, free_bytes: int) -> str:
+    """Concrete load mode. Explicit modes pass through; 'auto' picks by VRAM."""
+    if mode != "auto":
+        return mode
+    return "bf16" if free_bytes >= BF16_MIN_FREE else "offload"
+
+
+# Image tokens double the edit sequence, so edit chunks are half t2i.
+_CHUNKS = {"bf16": {"t2i": 4, "edit": 2}}
+_LOW_VRAM_CHUNKS = {"t2i": 2, "edit": 1}
+
+
+def chunk_size(mode: str, kind: str) -> int:
+    """Images per pipe call for a resolved mode; smaller on 8 GB paths."""
+    return _CHUNKS.get(mode, _LOW_VRAM_CHUNKS)[kind]
 
 
 def t2i_size(target_size: tuple[int, int],
@@ -83,8 +104,10 @@ def _report_tqdm(report):
 
 
 class KleinPipeline:
-    def __init__(self, models_dir: str = "models"):
+    def __init__(self, models_dir: str = "models", mode: str = "auto"):
         self.models_dir = models_dir
+        self.mode = mode
+        self._resolved = None
         self._pipe = None
 
     def load(self):
@@ -95,32 +118,67 @@ class KleinPipeline:
         import gc
         import torch
         from diffusers import Flux2KleinPipeline
-        log.info("loading %s (first run downloads ~15 GB)...", MODEL_ID)
+        free = torch.cuda.mem_get_info()[0] if torch.cuda.is_available() else 0
+        self._resolved = resolve_mode(self.mode, free)
+        log.info("loading %s (mode %s -> %s; first run downloads ~15 GB)...",
+                 MODEL_ID, self.mode, self._resolved)
         models.set_load_progress(0.0, "Reading model files")
+        builders = {"offload": self._build_offload, "fp8": self._build_fp8}
+        build = builders.get(self._resolved, self._build_bf16)
         with _report_tqdm(models.set_load_progress):
-            try:
-                from diffusers import PipelineQuantizationConfig
-                quant = PipelineQuantizationConfig(
-                    quant_backend="bitsandbytes_8bit",
-                    quant_kwargs={"load_in_8bit": True},
-                    components_to_quantize=["text_encoder"],
-                )
-                self._pipe = Flux2KleinPipeline.from_pretrained(
-                    MODEL_ID, torch_dtype=torch.bfloat16,
-                    cache_dir=self.models_dir,
-                    quantization_config=quant).to("cuda")
-            except Exception:
-                log.exception("resident load failed; falling back to CPU "
-                              "offload (slower, ~16 GB of system RAM)")
-                self._pipe = Flux2KleinPipeline.from_pretrained(
-                    MODEL_ID, torch_dtype=torch.bfloat16,
-                    cache_dir=self.models_dir)
-                self._pipe.enable_model_cpu_offload()
+            self._pipe = build(torch, Flux2KleinPipeline)
         models.set_load_progress(1.0, "Finishing up")
         self._pipe.vae.enable_slicing()
         gc.collect()
         torch.cuda.empty_cache()
-        log.info("klein pipeline ready")
+        log.info("klein pipeline ready (%s)", self._resolved)
+
+    def _build_bf16(self, torch, Pipe):
+        """12+ GB resident: 8-bit text encoder + bf16 transformer."""
+        try:
+            from diffusers import PipelineQuantizationConfig
+            quant = PipelineQuantizationConfig(
+                quant_backend="bitsandbytes_8bit",
+                quant_kwargs={"load_in_8bit": True},
+                components_to_quantize=["text_encoder"],
+            )
+            return Pipe.from_pretrained(
+                MODEL_ID, torch_dtype=torch.bfloat16,
+                cache_dir=self.models_dir,
+                quantization_config=quant).to("cuda")
+        except Exception:
+            log.exception("resident load failed; falling back to CPU "
+                          "offload (slower, ~16 GB of system RAM)")
+            pipe = Pipe.from_pretrained(
+                MODEL_ID, torch_dtype=torch.bfloat16,
+                cache_dir=self.models_dir)
+            pipe.enable_model_cpu_offload()
+            return pipe
+
+    def _build_fp8(self, torch, Pipe):
+        """8 GB resident: float8 weight-only transformer + 8-bit text encoder.
+        Near-lossless on Ada/Blackwell FP8 cores; unverified on this model."""
+        from diffusers import PipelineQuantizationConfig
+        from diffusers.quantizers.quantization_config import TorchAoConfig
+        from torchao.quantization import Float8WeightOnlyConfig
+        from transformers import BitsAndBytesConfig
+        quant = PipelineQuantizationConfig(quant_mapping={
+            "transformer": TorchAoConfig(Float8WeightOnlyConfig()),
+            "text_encoder": BitsAndBytesConfig(load_in_8bit=True),
+        })
+        return Pipe.from_pretrained(
+            MODEL_ID, torch_dtype=torch.bfloat16,
+            cache_dir=self.models_dir,
+            quantization_config=quant).to("cuda")
+
+    def _build_offload(self, torch, Pipe):
+        """8 GB lossless: bf16 weights streamed module-by-module off the GPU.
+        Slower but keeps output identical to bf16."""
+        pipe = Pipe.from_pretrained(
+            MODEL_ID, torch_dtype=torch.bfloat16,
+            cache_dir=self.models_dir)
+        pipe.enable_sequential_cpu_offload()
+        return pipe
 
     @staticmethod
     def variant_seeds(seed, variants):
@@ -163,9 +221,9 @@ class KleinPipeline:
         big, (bw, bh) = self._prep_input(image)
         seeds = seeds or self.variant_seeds(None, variants)
         out = []
-        # Chunks of 2: image tokens double the sequence, ~12 GB peak.
+        cap = chunk_size(self._resolved, "edit")
         while len(out) < variants:
-            chunk = min(2, variants - len(out))
+            chunk = min(cap, variants - len(out))
             imgs = self._pipe(
                 prompt=instruction + STYLE_SUFFIX,
                 image=big,
@@ -200,9 +258,9 @@ class KleinPipeline:
         w, h = t2i_size(target_size)
         seeds = seeds or self.variant_seeds(None, variants)
         out = []
-        # Chunks of 4: text-only sequences are shorter, ~12 GB peak.
+        cap = chunk_size(self._resolved, "t2i")
         while len(out) < variants:
-            chunk = min(4, variants - len(out))
+            chunk = min(cap, variants - len(out))
             out += self._pipe(
                 prompt=prompt + T2I_SUFFIX,
                 width=w, height=h,
