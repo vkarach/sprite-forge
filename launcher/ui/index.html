@@ -44,12 +44,13 @@
     color: var(--ink); border: 1px solid var(--line); flex: none;
   }
   #setupbtn:hover:not(:disabled) { border-color: var(--ink-faint); filter: none; }
-  #setupbtn.on { border-color: var(--gold); color: var(--gold); }
-  #setup .head {
-    font-size: 12px; letter-spacing: 0.08em; color: var(--ink-dim);
-    margin-bottom: 4px;
+  #backbtn { width: auto; margin: 0; padding: 6px 13px; font-size: 12.5px;
+             font-weight: 400; letter-spacing: 0.02em; }
+  .screen-title {
+    margin-left: 12px; font-family: var(--mono); font-weight: 700;
+    letter-spacing: 0.08em; font-size: 14px;
   }
-  #setup .opt:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+  #setup-view .opt { margin-top: 0; padding-top: 0; border-top: 0; }
   .hint { overflow-wrap: anywhere; }
   .card {
     margin-top: 16px; background: var(--panel);
@@ -139,44 +140,52 @@
   .hint.bad { color: var(--danger); }
 </style>
 
-<div class="brand"><i></i>SPRITEFORGE<span id="ver"></span>
-  <button id="setupbtn" class="ghost">Setup</button>
-</div>
-
-<div class="card">
-  <div class="row">
-    <span class="dot" id="dot"></span>
-    <span class="label" id="label">Checking</span>
+<div id="main-view">
+  <div class="brand"><i></i>SPRITEFORGE<span id="ver"></span>
+    <button id="setupbtn" class="ghost">Setup</button>
   </div>
-  <div class="addr" id="addr"></div>
-  <div class="bar" id="bar"><i id="barfill"></i></div>
-  <button id="toggle">START</button>
-  <div class="hint" id="hint"></div>
+
+  <div class="card">
+    <div class="row">
+      <span class="dot" id="dot"></span>
+      <span class="label" id="label">Checking</span>
+    </div>
+    <div class="addr" id="addr"></div>
+    <div class="bar" id="bar"><i id="barfill"></i></div>
+    <button id="toggle">START</button>
+    <div class="hint" id="hint"></div>
+  </div>
+
+  <div class="card plugin">
+    <span class="txt">ASEPRITE PLUGIN</span>
+    <span class="ver" id="plug"></span>
+    <button class="ghost" id="install">Install</button>
+  </div>
+
+  <details id="logbox">
+    <summary>Log</summary>
+    <pre id="log"></pre>
+  </details>
 </div>
 
-<div class="card" id="setup" hidden>
-  <div class="head">SETUP</div>
-  <div class="opt">
-    <label for="vram">VRAM mode</label>
-    <select id="vram">
-      <option value="auto">Auto · detect the card</option>
-      <option value="bf16">bf16 · 12 GB and up</option>
-      <option value="fp8">fp8 · 8 GB, fast</option>
-      <option value="offload">offload · 8 GB, slow</option>
-    </select>
+<div id="setup-view" hidden>
+  <div class="brand">
+    <button id="backbtn" class="ghost">← Back</button>
+    <span class="screen-title">SETUP</span>
+  </div>
+
+  <div class="card">
+    <div class="opt">
+      <label for="vram">VRAM mode</label>
+      <select id="vram">
+        <option value="auto">Auto · detect the card</option>
+        <option value="bf16">bf16 · 12 GB and up</option>
+        <option value="fp8">fp8 · 8 GB, fast</option>
+        <option value="offload">offload · 8 GB, slow</option>
+      </select>
+    </div>
   </div>
 </div>
-
-<div class="card plugin">
-  <span class="txt">ASEPRITE PLUGIN</span>
-  <span class="ver" id="plug"></span>
-  <button class="ghost" id="install">Install</button>
-</div>
-
-<details id="logbox">
-  <summary>Log</summary>
-  <pre id="log"></pre>
-</details>
 
 <script>
   const $ = (id) => document.getElementById(id);
@@ -225,12 +234,13 @@
   $("vram").onchange = async () =>
     paint(await window.pywebview.api.set_vram_mode($("vram").value));
 
-  $("setupbtn").onclick = () => {
-    const open = $("setup").hidden;
-    $("setup").hidden = !open;
-    $("setupbtn").className = "ghost" + (open ? " on" : "");
+  function showScreen(setup) {
+    $("main-view").hidden = setup;
+    $("setup-view").hidden = !setup;
     fit();
-  };
+  }
+  $("setupbtn").onclick = () => showScreen(true);
+  $("backbtn").onclick = () => showScreen(false);
 
   async function tick() {
     if (busy) return;

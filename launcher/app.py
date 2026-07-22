@@ -12,10 +12,12 @@ from server.config import (HOST, VRAM_MODES, load_port, load_vram_mode,
 VERSION = "0.1.0"
 TITLE = "SpriteForge"
 WIDTH = 520
-# measured against the real page: the collapsed layout needs exactly this
+# measured against the real page: the main screen collapsed needs exactly this
 HEIGHT_COMPACT = 380
-# the start size is also the floor, so the window only ever grows downward
-MIN_SIZE = (WIDTH, HEIGHT_COMPACT)
+# a hard floor low enough that a short screen (setup) still fits snugly; the
+# content drives the real height, this only stops a degenerate tiny window
+MIN_HEIGHT = 240
+MIN_SIZE = (WIDTH, MIN_HEIGHT)
 POLL_SECONDS = 1.5
 OFFLINE = {"state": "offline", "progress": 0.0, "stage": None}
 NO_VENV = ("No .venv found in {root}. "
@@ -94,12 +96,12 @@ class Api:
         """Grow or shrink to the page's own height; delta comes from the page.
 
         The page is the only one that knows how tall it is once the log is
-        open or a hint has appeared, so it measures and we follow. Width
-        never changes, and HEIGHT_COMPACT is the floor.
+        open, a hint has appeared, or the screen changed, so it measures and
+        we follow. Width never changes, MIN_HEIGHT is the floor.
         """
         if not _window or not delta:
             return
-        target = max(HEIGHT_COMPACT, self.height + int(delta))
+        target = max(MIN_HEIGHT, self.height + int(delta))
         if target != self.height:
             self.height = target
             _window.resize(WIDTH, target)
