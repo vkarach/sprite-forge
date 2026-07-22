@@ -1,0 +1,132 @@
+import asyncio
+import json
+import socket
+import sys
+import threading
+
+import pytest
+import websockets
+
+from launcher import server_proc
+
+
+def free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def test_clean_line_keeps_last_tqdm_state():
+    raw = "Loading weights:  10%|# | 40/398\rLoading weights: 100%|##| 398/398\n"
+    assert server_proc.clean_line(raw) == "Loading weights: 100%|##| 398/398"
+
+
+def test_clean_line_strips_ansi():
+    assert server_proc.clean_line("done\x1b[A\n") == "done"
+
+
+def test_clean_line_blank_stays_blank():
+    assert server_proc.clean_line("\r\n") == ""
+
+
+def test_venv_python_found(tmp_path):
+    scripts = tmp_path / ".venv" / "Scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "python.exe").write_text("", encoding="utf-8")
+    assert server_proc.venv_python(tmp_path) == scripts / "python.exe"
+
+
+def test_venv_python_missing(tmp_path):
+    assert server_proc.venv_python(tmp_path) is None
+
+
+def test_port_is_free_on_unused_port():
+    assert server_proc.port_is_free(free_port())
+
+
+def test_port_is_busy_while_bound():
+    with socket.socket() as held:
+        held.bind(("127.0.0.1", 0))
+        held.listen(1)
+        assert not server_proc.port_is_free(held.getsockname()[1])
+
+
+def test_pick_port_skips_busy():
+    with socket.socket() as held:
+        held.bind(("127.0.0.1", 0))
+        held.listen(1)
+        busy = held.getsockname()[1]
+        assert server_proc.pick_port(busy) != busy
+
+
+def test_pick_port_keeps_free_one():
+    port = free_port()
+    assert server_proc.pick_port(port) == port
+
+
+def test_probe_offline_when_nothing_listens():
+    assert server_proc.probe(free_port(), timeout=0.5)["state"] == "offline"
+
+
+@pytest.mark.parametrize("model,expected", [("ready", "ready"),
+                                            ("loading", "loading")])
+def test_probe_reads_pong(model, expected):
+    holder = {}
+    ready = threading.Event()
+
+    async def handler(ws):
+        async for _ in ws:
+            await ws.send(json.dumps({"type": "pong", "model": model,
+                                      "progress": 0.5,
+                                      "stage": "text encoder"}))
+
+    async def run():
+        async with websockets.serve(handler, "127.0.0.1", 0) as server:
+            holder["port"] = server.sockets[0].getsockname()[1]
+            ready.set()
+            await asyncio.Future()
+
+    loop = asyncio.new_event_loop()
+    threading.Thread(target=lambda: loop.run_until_complete(run()),
+                     daemon=True).start()
+    assert ready.wait(5)
+    result = server_proc.probe(holder["port"], timeout=3.0)
+    assert result["state"] == expected
+    if expected == "loading":
+        assert result["progress"] == 0.5
+        assert result["stage"] == "text encoder"
+
+
+def test_process_runs_and_collects_output(tmp_path):
+    proc = server_proc.ServerProcess(tmp_path, 8765, on_log=lambda line: None)
+    proc.python = sys.executable
+    proc.args = ["-c", "print('hello from server')"]
+    proc.start()
+    proc.wait_for_exit(timeout=10)
+    for _ in range(50):
+        if proc.lines:
+            break
+        threading.Event().wait(0.05)
+    assert any("hello from server" in line for line in proc.lines)
+    assert not proc.is_alive()
+
+
+def test_stop_kills_process(tmp_path):
+    proc = server_proc.ServerProcess(tmp_path, 8765, on_log=lambda line: None)
+    proc.python = sys.executable
+    proc.args = ["-c", "import time; time.sleep(60)"]
+    proc.start()
+    assert proc.is_alive()
+    proc.stop()
+    assert not proc.is_alive()
+
+
+def test_start_is_idempotent(tmp_path):
+    proc = server_proc.ServerProcess(tmp_path, 8765, on_log=lambda line: None)
+    proc.python = sys.executable
+    proc.args = ["-c", "import time; time.sleep(60)"]
+    proc.start()
+    first = proc.proc.pid
+    proc.start()
+    assert proc.proc.pid == first
+    proc.stop()
