@@ -3,6 +3,11 @@ import json
 from launcher import plugin_install
 
 
+def test_dest_in_uses_the_extensions_folder(tmp_path):
+    dest = plugin_install.dest_in(tmp_path / "Aseprite")
+    assert dest == tmp_path / "Aseprite" / "extensions" / "spriteforge"
+
+
 def make_source(tmp_path, version="0.1.0"):
     src = tmp_path / "plugin"
     src.mkdir(parents=True)

@@ -16,6 +16,11 @@ def source_dir() -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parent.parent / "plugin"
 
 
+def dest_in(aseprite_dir) -> pathlib.Path:
+    """The install target under a given Aseprite folder."""
+    return pathlib.Path(aseprite_dir) / "extensions" / FOLDER
+
+
 def extensions_dir() -> pathlib.Path | None:
     base = os.environ.get("APPDATA")
     if not base:
@@ -23,7 +28,7 @@ def extensions_dir() -> pathlib.Path | None:
     aseprite = pathlib.Path(base) / "Aseprite"
     if not aseprite.is_dir():
         return None
-    return aseprite / "extensions" / FOLDER
+    return dest_in(aseprite)
 
 
 def read_version(folder: pathlib.Path) -> str | None:
