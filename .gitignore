@@ -11,3 +11,8 @@ __pycache__/
 # Models and generation output (large binaries)
 models/
 output/
+
+# PyInstaller
+build/
+dist/
+SpriteForge.exe

@@ -64,13 +64,22 @@ and no cloud option by design — the whole point is that it runs locally.
 1. `py -3 -m venv .venv`
 2. `.venv\Scripts\python -m pip install -r server\requirements.txt`
 3. `.venv\Scripts\python -m pip install torch --index-url https://download.pytorch.org/whl/cu128`
-4. `install-plugin.bat` (then restart Aseprite)
+4. Run `SpriteForge.exe`, press **Install**, then restart Aseprite.
+   (No exe yet? `install-plugin.bat` does the same thing.)
 
 The model (~15 GB) downloads automatically the first time you run a task.
 
+To build the exe yourself: `.venv\Scripts\python -m pip install -r
+launcher\requirements.txt`, then `.venv\Scripts\python -m PyInstaller
+build.spec`, and copy `dist\SpriteForge.exe` next to `.venv`. It is a
+launcher only, about 15 MB: the model and PyTorch stay outside it.
+
 ## Use
 
-1. Run `start-server.bat` and leave it running (minimize it).
+1. Run `SpriteForge.exe`, press **START** and leave the window open. The dot
+   turns green once the model is resident, about 25 seconds after a warm
+   start. Closing the window stops the server. (`start-server.bat` still
+   works if you prefer a console.)
 2. In Aseprite: **Sprite → SpriteForge...** (or press **F1**). Pick a task,
    fill the fields, press **Run**. Results open in a separate window; click
    a variant to insert it as a new layer.
@@ -159,6 +168,24 @@ Layout and ghosting still need a real Aseprite.
 | `prompt.lua` | prompt assembly and key maps (pure Lua, unit-tested) |
 | `client.lua` | WebSocket client |
 | `base64.lua` | base64 codec |
+
+### Launcher layout
+
+| file | holds |
+|---|---|
+| `launcher/app.py` | the window, the JS bridge, window sizing |
+| `launcher/ui/index.html` | markup and styles |
+| `launcher/server_proc.py` | the server subprocess, port probing, health |
+| `launcher/plugin_install.py` | copying the plugin, version comparison |
+| `server/config.py` | the port, shared by the launcher and the server |
+
+The launcher owns the port. It lives in `%APPDATA%\SpriteForge\config.json`,
+defaults to 8765, and **Install** stamps the same value into `server.json`
+next to the installed plugin, so both ends always agree.
+
+The server runs inside a Windows job object that dies with the launcher.
+That is what keeps a crashed or killed launcher from leaving a server behind
+holding your VRAM.
 
 ## License
 
