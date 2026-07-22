@@ -1,6 +1,8 @@
 import asyncio
 import json
+import pathlib
 import socket
+import subprocess
 import sys
 import threading
 
@@ -119,6 +121,71 @@ def test_stop_kills_process(tmp_path):
     assert proc.is_alive()
     proc.stop()
     assert not proc.is_alive()
+
+
+def pid_alive(pid):
+    out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                         capture_output=True, text=True).stdout
+    return str(pid) in out
+
+
+# the server spawns workers of its own; stopping must take the whole tree
+GRANDCHILD = (
+    "import subprocess, sys, time\n"
+    "kid = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+    "print(kid.pid, flush=True)\n"
+    "time.sleep(120)\n"
+)
+
+
+def test_stop_kills_the_whole_tree(tmp_path):
+    proc = server_proc.ServerProcess(tmp_path, 8765, on_log=lambda line: None)
+    proc.python = sys.executable
+    proc.args = ["-u", "-c", GRANDCHILD]
+    proc.start()
+    for _ in range(100):
+        if proc.lines:
+            break
+        threading.Event().wait(0.1)
+    grandchild = int(proc.lines[0].strip())
+    assert pid_alive(grandchild)
+    proc.stop()
+    for _ in range(50):
+        if not pid_alive(grandchild):
+            break
+        threading.Event().wait(0.1)
+    assert not pid_alive(grandchild), "grandchild outlived the server"
+
+
+# a launcher that is killed outright, the way Task Manager or a crash does it
+FAKE_LAUNCHER = (
+    "import sys, time\n"
+    "sys.path.insert(0, {root!r})\n"
+    "from launcher import server_proc\n"
+    "p = server_proc.ServerProcess({root!r}, 8765, on_log=lambda line: None)\n"
+    "p.python = sys.executable\n"
+    "p.args = ['-c', 'import time; time.sleep(120)']\n"
+    "p.start()\n"
+    "print(p.proc.pid, flush=True)\n"
+    "time.sleep(120)\n"
+)
+
+
+def test_hard_killed_launcher_takes_the_server_with_it(tmp_path):
+    root = str(pathlib.Path(__file__).resolve().parent.parent.parent)
+    launcher = subprocess.Popen(
+        [sys.executable, "-u", "-c", FAKE_LAUNCHER.format(root=root)],
+        stdout=subprocess.PIPE, text=True)
+    server_pid = int(launcher.stdout.readline().strip())
+    assert pid_alive(server_pid)
+    # /F only, no /T: nothing walks the tree for us
+    subprocess.run(["taskkill", "/F", "/PID", str(launcher.pid)],
+                   capture_output=True)
+    for _ in range(60):
+        if not pid_alive(server_pid):
+            break
+        threading.Event().wait(0.1)
+    assert not pid_alive(server_pid), "server outlived the killed launcher"
 
 
 def test_start_is_idempotent(tmp_path):
