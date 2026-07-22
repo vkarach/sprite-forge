@@ -1,5 +1,20 @@
 -- WebSocket client for the SpriteForge server. One request at a time.
-local M = { URL = "http://127.0.0.1:8765" }
+local pluginDir = ...
+
+-- the launcher writes server.json here; without it the built in default holds
+local function readPort()
+  if not pluginDir then return 8765 end
+  local f = io.open(app.fs.joinPath(pluginDir, "server.json"), "r")
+  if not f then return 8765 end
+  local text = f:read("a"); f:close()
+  local ok, data = pcall(json.decode, text)
+  if ok and type(data) == "table" and type(data.port) == "number" then
+    return math.floor(data.port)
+  end
+  return 8765
+end
+
+local M = { URL = "http://127.0.0.1:" .. readPort() }
 
 -- Aseprite's WebSocket takes an http:// url. json global is built in (1.3+).
 -- One-shot socket: connect, send payload, hand each decoded TEXT to
@@ -29,14 +44,14 @@ local function oneShot(payload, onText, onFail)
         local ok, msg = pcall(json.decode, data)
         if ok then onText(msg, finish) else fail("bad server reply") end
       elseif mt == WebSocketMessageType.CLOSE then
-        fail("Server offline. Run start-server.bat.")
+        fail("Server offline. Open the SpriteForge app and press Start.")
       end
     end,
   }
   if Timer then
     timer = Timer{ interval = 5.0,
                    ontick = function()
-                     fail("Server offline. Run start-server.bat.")
+                     fail("Server offline. Open the SpriteForge app and press Start.")
                    end }
     timer:start()
   end
@@ -102,7 +117,7 @@ function M.ping(onOk, onFail)
           onOk(msg.model, msg.progress, msg.stage)
         else pingDrop(onFail, "bad reply") end
       elseif mt == WebSocketMessageType.CLOSE then
-        pingDrop(onFail, "Server offline. Run start-server.bat.")
+        pingDrop(onFail, "Server offline. Open the SpriteForge app and press Start.")
       end
     end,
   }
@@ -113,7 +128,7 @@ function M.ping(onOk, onFail)
       interval = 5.0,
       ontick = function()
         if pingState == "connecting" then
-          pingDrop(onFail, "Server offline. Run start-server.bat.")
+          pingDrop(onFail, "Server offline. Open the SpriteForge app and press Start.")
         end
       end,
     }

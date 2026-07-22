@@ -4,7 +4,7 @@ local function moduleFrom(name)
   return assert(loadfile(app.fs.joinPath(pluginDir, name)))(pluginDir)
 end
 
-local client = dofile(app.fs.joinPath(pluginDir, "client.lua"))
+local client = moduleFrom("client.lua")
 local P = moduleFrom("prompt.lua")
 local ui = moduleFrom("ui.lua")
 local sprite = moduleFrom("sprite.lua")
@@ -453,7 +453,7 @@ function D.open()
     elseif serverStatus == "checking" then
       line = "Connecting to server..."
     elseif serverStatus == "offline" then
-      line = "Server offline - run start-server.bat"
+      line = "Server offline. Open the SpriteForge app"
     elseif serverStatus == "warming" and state ~= "error" then
       line = "Loading Klein model"
     end
