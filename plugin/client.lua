@@ -16,6 +16,18 @@ end
 
 local M = { URL = "http://127.0.0.1:" .. readPort() }
 
+local OFFLINE = "Server offline. Open the SpriteForge app and press Start."
+
+-- a socket whose peer is gone throws from sendText and close, and an
+-- uncaught throw here opens the Aseprite Console on top of the panel
+local function send(ws, payload)
+  return pcall(function() ws:sendText(json.encode(payload)) end)
+end
+
+local function shut(ws)
+  pcall(function() ws:close() end)
+end
+
 -- Aseprite's WebSocket takes an http:// url. json global is built in (1.3+).
 -- One-shot socket: connect, send payload, hand each decoded TEXT to
 -- onText(msg, finish); a lost connect or a CLOSE reports onFail once. Returns
@@ -27,7 +39,7 @@ local function oneShot(payload, onText, onFail)
     if not done then
       done = true
       if timer then timer:stop() end
-      ws:close()
+      shut(ws)
     end
   end
   local function fail(msg)
@@ -39,20 +51,17 @@ local function oneShot(payload, onText, onFail)
     onreceive = function(mt, data)
       if mt == WebSocketMessageType.OPEN then
         if timer then timer:stop() end
-        ws:sendText(json.encode(payload))
+        if not send(ws, payload) then fail(OFFLINE) end
       elseif mt == WebSocketMessageType.TEXT then
         local ok, msg = pcall(json.decode, data)
         if ok then onText(msg, finish) else fail("bad server reply") end
       elseif mt == WebSocketMessageType.CLOSE then
-        fail("Server offline. Open the SpriteForge app and press Start.")
+        fail(OFFLINE)
       end
     end,
   }
   if Timer then
-    timer = Timer{ interval = 5.0,
-                   ontick = function()
-                     fail("Server offline. Open the SpriteForge app and press Start.")
-                   end }
+    timer = Timer{ interval = 5.0, ontick = function() fail(OFFLINE) end }
     timer:start()
   end
   ws:connect()
@@ -87,14 +96,15 @@ local pingWs, pingState, pingTimer  -- state: idle | connecting | open
 
 local function pingDrop(onFail, msg)
   if pingTimer then pingTimer:stop(); pingTimer = nil end
-  if pingWs then pingWs:close(); pingWs = nil end
+  if pingWs then shut(pingWs); pingWs = nil end
   pingState = "idle"
   if onFail then onFail(msg) end
 end
 
 function M.ping(onOk, onFail)
   if pingState == "open" and pingWs then
-    pingWs:sendText(json.encode({ type = "ping" }))
+    -- the peer can die between ticks, long before a CLOSE reaches us
+    if not send(pingWs, { type = "ping" }) then pingDrop(onFail, OFFLINE) end
     return
   end
   if pingState == "connecting" then return end  -- one connect pending at a time
@@ -108,7 +118,7 @@ function M.ping(onOk, onFail)
       if mt == WebSocketMessageType.OPEN then
         if pingTimer then pingTimer:stop(); pingTimer = nil end
         pingState = "open"
-        ws:sendText(json.encode({ type = "ping" }))
+        if not send(ws, { type = "ping" }) then pingDrop(onFail, OFFLINE) end
       elseif mt == WebSocketMessageType.TEXT then
         local ok, msg = pcall(json.decode, data)
         -- msg.model: "ready" | "loading" (nil from an older server = ready);
@@ -117,7 +127,7 @@ function M.ping(onOk, onFail)
           onOk(msg.model, msg.progress, msg.stage)
         else pingDrop(onFail, "bad reply") end
       elseif mt == WebSocketMessageType.CLOSE then
-        pingDrop(onFail, "Server offline. Open the SpriteForge app and press Start.")
+        pingDrop(onFail, OFFLINE)
       end
     end,
   }
@@ -128,7 +138,7 @@ function M.ping(onOk, onFail)
       interval = 5.0,
       ontick = function()
         if pingState == "connecting" then
-          pingDrop(onFail, "Server offline. Open the SpriteForge app and press Start.")
+          pingDrop(onFail, OFFLINE)
         end
       end,
     }
