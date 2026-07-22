@@ -44,6 +44,19 @@
     color: var(--ink); border: 1px solid var(--line); flex: none;
   }
   #setupbtn:hover:not(:disabled) { border-color: var(--ink-faint); filter: none; }
+  /* a cold start has to be impossible to miss */
+  #setupbtn.cold {
+    color: var(--danger); border-color: var(--danger);
+    animation: glow 1.9s ease-in-out infinite, hop 1.9s ease-in-out infinite;
+  }
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(232, 112, 90, 0); }
+    50% { box-shadow: 0 0 13px 1px rgba(232, 112, 90, 0.55); }
+  }
+  @keyframes hop {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
   #backbtn { width: auto; margin: 0; padding: 6px 13px; font-size: 12.5px;
              font-weight: 400; letter-spacing: 0.02em; }
   .screen-title {
@@ -51,6 +64,28 @@
     letter-spacing: 0.08em; font-size: 14px;
   }
   #setup-view .opt { margin-top: 0; padding-top: 0; border-top: 0; }
+  #setup-view .card { margin-top: 12px; }
+  .srow {
+    display: flex; align-items: center; gap: 10px; padding: 8px 0;
+    border-bottom: 1px solid var(--line); font-size: 13px;
+  }
+  .srow:last-child { border-bottom: 0; }
+  .srow .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .srow .detail { color: var(--ink-faint); flex: none; font-size: 12px; }
+  .srow.ok .mark { color: var(--ok); }
+  .srow.blocked { opacity: 0.5; }
+  .srow.failed .detail { color: var(--danger); }
+  .srow.running .detail, .srow.cancelled .detail { color: var(--gold); }
+  .srow .mark { width: 15px; flex: none; text-align: center; color: var(--ink-faint); }
+  .srow input { flex: none; width: 15px; height: 15px; accent-color: var(--gold); }
+  #installbtn { margin-top: 14px; }
+  .prow { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+  .prow .pname { color: var(--ink-dim); flex: none; width: 68px; font-size: 12px; }
+  .prow .pval { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--ink-faint); font-size: 12px; }
+  .prow.warn .pval { color: var(--gold); }
+  .prow button { padding: 4px 10px; font-size: 11.5px; flex: none; }
+  #setuplog { height: 150px; }
+  #setuplogbox { margin-top: 12px; }
   .hint { overflow-wrap: anywhere; }
   .card {
     margin-top: 16px; background: var(--panel);
@@ -175,6 +210,16 @@
   </div>
 
   <div class="card">
+    <div class="rows" id="setuprows"></div>
+    <button id="installbtn" disabled>INSTALL SELECTED</button>
+  </div>
+
+  <div class="card">
+    <div class="head">PATHS</div>
+    <div id="setuppaths"></div>
+  </div>
+
+  <div class="card">
     <div class="opt">
       <label for="vram">VRAM mode</label>
       <select id="vram">
@@ -185,6 +230,11 @@
       </select>
     </div>
   </div>
+
+  <details id="setuplogbox">
+    <summary>Log</summary>
+    <pre id="setuplog"></pre>
+  </details>
 </div>
 
 <script>
@@ -231,19 +281,123 @@
 
   $("toggle").onclick = () => call(window.pywebview.api.toggle_server);
   $("install").onclick = () => call(window.pywebview.api.install_plugin);
-  $("vram").onchange = async () =>
-    paint(await window.pywebview.api.set_vram_mode($("vram").value));
+  $("vram").onchange = async () => {
+    await window.pywebview.api.set_vram_mode($("vram").value);
+    setupTick();
+  };
+
+  // ---- setup screen
+
+  const PATH_LABELS = {root: "Project", python: "Python",
+                       aseprite_dir: "Aseprite", models_dir: "Model"};
+  const chosen = new Set();
+  let onSetup = false;
+  let installing = false;
+
+  function mark(item) {
+    if (item.step_state === "running") return "…";
+    if (item.step_state === "done" || item.state === "ok") return "✓";
+    if (item.step_state === "failed") return "✕";
+    if (item.state === "blocked") return "·";
+    return "";
+  }
+
+  function setupPaint(s) {
+    if (document.activeElement !== $("vram")) $("vram").value = s.vram_mode;
+    installing = s.running;
+    $("setupbtn").className = "ghost" + (s.cold ? " cold" : "");
+
+    const rows = $("setuprows");
+    rows.innerHTML = "";
+    for (const item of s.items) {
+      const row = document.createElement("div");
+      row.className = "srow " + (item.step_state || item.state);
+      const actionable = item.state !== "ok" && item.state !== "blocked"
+        && !item.step_state;
+      if (actionable && !s.running) {
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = chosen.has(item.id);
+        box.onchange = () => {
+          box.checked ? chosen.add(item.id) : chosen.delete(item.id);
+          setupPaint(s);
+        };
+        row.appendChild(box);
+      } else {
+        const m = document.createElement("span");
+        m.className = "mark";
+        m.textContent = mark(item);
+        row.appendChild(m);
+      }
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = item.label;
+      const detail = document.createElement("span");
+      detail.className = "detail";
+      detail.textContent = item.step_detail || item.detail;
+      row.append(name, detail);
+      rows.appendChild(row);
+    }
+
+    const paths = $("setuppaths");
+    paths.innerHTML = "";
+    for (const [kind, label] of Object.entries(PATH_LABELS)) {
+      const row = document.createElement("div");
+      row.className = "prow" + (s.paths[kind] ? "" : " warn");
+      const name = document.createElement("span");
+      name.className = "pname";
+      name.textContent = label;
+      const val = document.createElement("span");
+      val.className = "pval";
+      val.textContent = s.paths[kind] || "not found";
+      const pick = document.createElement("button");
+      pick.className = "ghost";
+      pick.textContent = "Choose";
+      pick.disabled = s.running;
+      pick.onclick = async () => setupPaint(await window.pywebview.api
+                                              .choose_path(kind));
+      row.append(name, val, pick);
+      paths.appendChild(row);
+    }
+
+    const btn = $("installbtn");
+    btn.textContent = s.running ? "CANCEL"
+      : (s.checking ? "CHECKING…" : "INSTALL SELECTED (" + chosen.size + ")");
+    btn.disabled = !s.running && (s.checking || chosen.size === 0);
+
+    const log = $("setuplog");
+    if (log.textContent !== s.log) {
+      const stuck = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
+      log.textContent = s.log;
+      if (stuck) log.scrollTop = log.scrollHeight;
+    }
+    if (s.running && !$("setuplogbox").open) $("setuplogbox").open = true;
+    fit();
+  }
+
+  $("installbtn").onclick = async () => {
+    const api = window.pywebview.api;
+    setupPaint(await (installing ? api.cancel_install()
+                                 : api.install([...chosen])));
+  };
 
   function showScreen(setup) {
+    onSetup = setup;
     $("main-view").hidden = setup;
     $("setup-view").hidden = !setup;
+    if (setup) setupTick();
     fit();
   }
   $("setupbtn").onclick = () => showScreen(true);
   $("backbtn").onclick = () => showScreen(false);
 
+  async function setupTick() {
+    if (!onSetup) return;
+    setupPaint(await window.pywebview.api.setup_state());
+  }
+
   async function tick() {
-    if (busy) return;
+    if (busy || onSetup) return;
     paint(await window.pywebview.api.state());
   }
 
@@ -261,9 +415,10 @@
   }
 
   $("logbox").addEventListener("toggle", fit);
+  $("setuplogbox").addEventListener("toggle", fit);
 
   window.addEventListener("pywebviewready", () => {
     tick();
-    setInterval(tick, 1000);
+    setInterval(() => { onSetup ? setupTick() : tick(); }, 1000);
   });
 </script>

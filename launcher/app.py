@@ -5,10 +5,11 @@ import threading
 
 import webview
 
-from launcher import plugin_install, server_proc
+from launcher import paths, plugin_install, server_proc, setup_checks, \
+    setup_steps
 from launcher.paths import app_root
 from server.config import (HOST, VRAM_MODES, load_port, load_vram_mode,
-                           save_port, save_vram_mode)
+                           save_port, save_settings, save_vram_mode)
 
 VERSION = "0.1.0"
 TITLE = "SpriteForge"
@@ -19,6 +20,7 @@ HEIGHT_COMPACT = 380
 # content drives the real height, this only stops a degenerate tiny window
 MIN_HEIGHT = 240
 MIN_SIZE = (WIDTH, MIN_HEIGHT)
+MAX_SCREEN_FRACTION = 0.9
 POLL_SECONDS = 1.5
 OFFLINE = {"state": "offline", "progress": 0.0, "stage": None}
 NO_VENV = ("No .venv found in {root}. "
@@ -28,6 +30,13 @@ NO_VENV = ("No .venv found in {root}. "
 # object to expose it, and walking a Window recurses through
 # native.AccessibilityObject until the UI thread is wedged.
 _window = None
+
+
+def _screen_height(default: int = 1080) -> int:
+    try:
+        return int(webview.screens[0].height)
+    except (AttributeError, IndexError, TypeError, ValueError):
+        return default
 
 
 def ui_file() -> str:
@@ -63,9 +72,18 @@ class Api:
         self.hint = ""
         self.hint_bad = False
         self.height = HEIGHT_COMPACT
+        self.paths = paths.resolve()
+        self.items: list[dict] = []
+        self.checking = False
+        self.setup_log: list[str] = []
+        self.step_state: dict[str, tuple] = {}
+        self.was_running = False
+        self.runner = setup_steps.Runner(self.paths, self._step_event,
+                                         self._setup_log)
         if server_proc.venv_python(self.root) is None:
             self._say(NO_VENV.format(root=self.root), bad=True)
         threading.Thread(target=self._poll, daemon=True).start()
+        self._start_check()
 
     def _new_proc(self):
         return server_proc.ServerProcess(self.root, self.port,
@@ -96,7 +114,8 @@ class Api:
         """
         if not _window or not delta:
             return
-        target = max(MIN_HEIGHT, self.height + int(delta))
+        cap = int(_screen_height() * MAX_SCREEN_FRACTION)
+        target = min(max(MIN_HEIGHT, self.height + int(delta)), cap)
         if target != self.height:
             self.height = target
             _window.resize(WIDTH, target)
@@ -134,6 +153,86 @@ class Api:
         else:
             self._say("")
         return self._snapshot()
+
+    # ---- setup wizard
+
+    def _setup_log(self, line: str) -> None:
+        self.setup_log.append(line)
+        del self.setup_log[:-200]
+
+    def _step_event(self, step_id: str, state: str, detail: str) -> None:
+        self.step_state[step_id] = (state, detail)
+
+    def _start_check(self) -> None:
+        # deps and torch probes import torch, seconds each; keep it off the UI
+        if self.checking:
+            return
+        self.checking = True
+
+        def work():
+            resolved = paths.resolve()
+            items = setup_checks.check_all(resolved)
+            self.paths = resolved
+            self.items = items
+            self.checking = False
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def recheck(self) -> dict:
+        self._start_check()
+        return self.setup_state()
+
+    def setup_state(self) -> dict:
+        running = self.runner.is_running()
+        # a run that just ended must leave the list showing reality
+        if self.was_running and not running:
+            self.was_running = False
+            self._start_check()
+        rows = []
+        for item in self.items:
+            state, detail = self.step_state.get(item["id"], (None, ""))
+            rows.append({**item, "step_state": state, "step_detail": detail})
+        cold = any(item["required"] and item["state"] != setup_checks.OK
+                   for item in self.items)
+        return {"items": rows, "paths": self._paths_view(), "running": running,
+                "checking": self.checking, "cold": cold,
+                "vram_mode": load_vram_mode(),
+                "log": "\n".join(self.setup_log[-200:])}
+
+    def _paths_view(self) -> dict:
+        p = self.paths
+        return {"root": str(p.root),
+                "python": str(p.python) if p.python else "",
+                "aseprite_dir": str(p.aseprite_dir) if p.aseprite_dir else "",
+                "models_dir": str(p.models_dir)}
+
+    def install(self, ids) -> dict:
+        if self.runner.is_running():
+            return self.setup_state()
+        self.step_state = {}
+        self.setup_log = []
+        self.runner = setup_steps.Runner(self.paths, self._step_event,
+                                         self._setup_log)
+        self.runner.start(list(ids))
+        self.was_running = True
+        return self.setup_state()
+
+    def cancel_install(self) -> dict:
+        self.runner.cancel()
+        self._setup_log("-- cancelled --")
+        return self.setup_state()
+
+    def choose_path(self, kind: str) -> dict:
+        if _window is None or kind not in ("root", "python", "aseprite_dir",
+                                           "models_dir"):
+            return self.setup_state()
+        mode = (webview.OPEN_DIALOG if kind == "python"
+                else webview.FOLDER_DIALOG)
+        picked = _window.create_file_dialog(mode)
+        if picked:
+            save_settings({kind: str(picked[0])})
+            self.paths = paths.resolve()
+        return self.recheck()
 
     def install_plugin(self) -> dict:
         dest = plugin_install.extensions_dir()
