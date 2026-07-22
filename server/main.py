@@ -106,8 +106,10 @@ def _history_msg(offset, limit, preview=False):
 def _register_default_models():
     """Idempotent registration of the real pipeline."""
     def klein():
+        from server import config
         from server.instruct import KleinPipeline
-        p = KleinPipeline()
+        p = KleinPipeline(models_dir=config.load_models_dir(),
+                          mode=config.load_vram_mode())
         p.load()
         return p
 
