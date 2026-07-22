@@ -8,12 +8,16 @@ import webview
 from launcher import paths, plugin_install, server_proc, setup_checks, \
     setup_steps
 from launcher.paths import app_root
-from server.config import (HOST, VRAM_MODES, load_port, load_vram_mode,
-                           save_port, save_settings, save_vram_mode)
+from server.config import (HOST, VRAM_MODES, load_port, load_settings,
+                           load_vram_mode, save_port, save_settings,
+                           save_vram_mode)
 
 VERSION = "0.1.0"
 TITLE = "SpriteForge"
 WIDTH = 520
+# during an install the log sits in a second column so the window widens
+# instead of growing tall
+WIDE_WIDTH = 880
 # measured against the real page: the main screen collapsed needs exactly this
 HEIGHT_COMPACT = 380
 # a hard floor low enough that a short screen (setup) still fits snugly; the
@@ -72,6 +76,7 @@ class Api:
         self.hint = ""
         self.hint_bad = False
         self.height = HEIGHT_COMPACT
+        self.width = WIDTH
         self.paths = paths.resolve()
         self.items: list[dict] = []
         self.checking = False
@@ -118,7 +123,15 @@ class Api:
         target = min(max(MIN_HEIGHT, self.height + int(delta)), cap)
         if target != self.height:
             self.height = target
-            _window.resize(WIDTH, target)
+            _window.resize(self.width, target)
+
+    def set_wide(self, on: bool) -> None:
+        """Widen for the two-column install view, narrow back afterwards."""
+        want = WIDE_WIDTH if on else WIDTH
+        if not _window or want == self.width:
+            return
+        self.width = want
+        _window.resize(want, self.height)
 
     def toggle_server(self) -> dict:
         if self.proc.is_alive():
@@ -194,9 +207,12 @@ class Api:
             rows.append({**item, "step_state": state, "step_detail": detail})
         cold = any(item["required"] and item["state"] != setup_checks.OK
                    for item in self.items)
+        saved = load_settings()
+        overrides = [k for k in ("root", "python", "aseprite_dir",
+                                 "models_dir") if saved.get(k)]
         return {"items": rows, "paths": self._paths_view(), "running": running,
                 "checking": self.checking, "cold": cold,
-                "vram_mode": load_vram_mode(),
+                "overrides": overrides, "vram_mode": load_vram_mode(),
                 "log": "\n".join(self.setup_log[-200:])}
 
     def _paths_view(self) -> dict:
@@ -231,6 +247,13 @@ class Api:
         picked = _window.create_file_dialog(mode)
         if picked:
             save_settings({kind: str(picked[0])})
+            self.paths = paths.resolve()
+        return self.recheck()
+
+    def reset_path(self, kind: str) -> dict:
+        # drop the manual override so this path auto-detects again
+        if kind in ("root", "python", "aseprite_dir", "models_dir"):
+            save_settings({kind: None})
             self.paths = paths.resolve()
         return self.recheck()
 
