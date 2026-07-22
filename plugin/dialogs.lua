@@ -105,13 +105,13 @@ function D.open()
         syncButtons()
         repaint()
       end,
-      function()
+      function(_, hard)
         pingBusy = false
         pingMisses = pingMisses + 1
-        -- a live server can miss one ping while the model load hogs it;
-        -- flip to offline only when it was never seen alive or misses twice
+        -- a closed socket is proof, so go offline at once; a silent server
+        -- only counts as a miss, since a model load can hog one whole tick
         local alive = serverStatus == "online" or serverStatus == "warming"
-        if not alive or pingMisses >= 2 then
+        if hard or not alive or pingMisses >= 2 then
           serverStatus = "offline"
         end
         retunePing()

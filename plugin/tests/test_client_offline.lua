@@ -69,6 +69,48 @@ end)
 ok(safe, "a dead socket must not throw out of request")
 ok(failed ~= nil, "a dead request must report offline")
 
+-- 4. a closed socket is proof, a silent one is not: the panel needs to tell
+-- them apart so it can go offline at once without false alarms on a busy load
+local hard
+local function noteFail(_, isHard) hard = isHard end
+
+alive = false
+client = freshClient()
+hard = nil
+client.ping(function() end, noteFail)
+ok(hard == true, "a failed send must report a hard failure")
+
+-- a CLOSE from the peer is equally definitive
+_G.WebSocket = function(spec)
+  local self = {}
+  self.connect = function() spec.onreceive(WebSocketMessageType.CLOSE, nil) end
+  self.sendText = function() end
+  self.close = function() end
+  return self
+end
+client = assert(loadfile("plugin/client.lua"))(nil)
+hard = nil
+client.ping(function() end, noteFail)
+ok(hard == true, "a CLOSE must report a hard failure")
+
+-- a connect that simply never answers must stay soft
+_G.WebSocket = function()
+  return { connect = function() end, sendText = function() end,
+           close = function() end }
+end
+local ticks = {}
+_G.Timer = function(spec)
+  ticks[#ticks + 1] = spec.ontick
+  return { start = function() end, stop = function() end }
+end
+client = assert(loadfile("plugin/client.lua"))(nil)
+hard = nil
+client.ping(function() end, noteFail)
+ok(#ticks > 0, "a pending connect must arm a timeout")
+ticks[#ticks]()
+ok(hard ~= true, "a timeout must stay a soft failure")
+_G.Timer = nil
+
 if failures > 0 then
   print(failures .. " failure(s)")
   os.exit(1)

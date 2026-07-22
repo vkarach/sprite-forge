@@ -42,8 +42,10 @@ local function oneShot(payload, onText, onFail)
       shut(ws)
     end
   end
-  local function fail(msg)
-    if not done then finish(); onFail(msg) end
+  -- hard means the socket is provably gone (send threw, or a CLOSE arrived);
+  -- a silent connect is only soft evidence, a loaded server can be slow
+  local function fail(msg, hard)
+    if not done then finish(); onFail(msg, hard) end
   end
   ws = WebSocket{
     url = M.URL,
@@ -51,17 +53,17 @@ local function oneShot(payload, onText, onFail)
     onreceive = function(mt, data)
       if mt == WebSocketMessageType.OPEN then
         if timer then timer:stop() end
-        if not send(ws, payload) then fail(OFFLINE) end
+        if not send(ws, payload) then fail(OFFLINE, true) end
       elseif mt == WebSocketMessageType.TEXT then
         local ok, msg = pcall(json.decode, data)
         if ok then onText(msg, finish) else fail("bad server reply") end
       elseif mt == WebSocketMessageType.CLOSE then
-        fail(OFFLINE)
+        fail(OFFLINE, true)
       end
     end,
   }
   if Timer then
-    timer = Timer{ interval = 5.0, ontick = function() fail(OFFLINE) end }
+    timer = Timer{ interval = 5.0, ontick = function() fail(OFFLINE, false) end }
     timer:start()
   end
   ws:connect()
@@ -94,17 +96,19 @@ end
 -- UI thread (suspected alt-tab freeze). While open we just resend on it.
 local pingWs, pingState, pingTimer  -- state: idle | connecting | open
 
-local function pingDrop(onFail, msg)
+local function pingDrop(onFail, msg, hard)
   if pingTimer then pingTimer:stop(); pingTimer = nil end
   if pingWs then shut(pingWs); pingWs = nil end
   pingState = "idle"
-  if onFail then onFail(msg) end
+  if onFail then onFail(msg, hard) end
 end
 
 function M.ping(onOk, onFail)
   if pingState == "open" and pingWs then
     -- the peer can die between ticks, long before a CLOSE reaches us
-    if not send(pingWs, { type = "ping" }) then pingDrop(onFail, OFFLINE) end
+    if not send(pingWs, { type = "ping" }) then
+      pingDrop(onFail, OFFLINE, true)
+    end
     return
   end
   if pingState == "connecting" then return end  -- one connect pending at a time
@@ -118,7 +122,9 @@ function M.ping(onOk, onFail)
       if mt == WebSocketMessageType.OPEN then
         if pingTimer then pingTimer:stop(); pingTimer = nil end
         pingState = "open"
-        if not send(ws, { type = "ping" }) then pingDrop(onFail, OFFLINE) end
+        if not send(ws, { type = "ping" }) then
+          pingDrop(onFail, OFFLINE, true)
+        end
       elseif mt == WebSocketMessageType.TEXT then
         local ok, msg = pcall(json.decode, data)
         -- msg.model: "ready" | "loading" (nil from an older server = ready);
@@ -127,7 +133,7 @@ function M.ping(onOk, onFail)
           onOk(msg.model, msg.progress, msg.stage)
         else pingDrop(onFail, "bad reply") end
       elseif mt == WebSocketMessageType.CLOSE then
-        pingDrop(onFail, OFFLINE)
+        pingDrop(onFail, OFFLINE, true)
       end
     end,
   }
