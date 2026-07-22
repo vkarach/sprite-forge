@@ -94,7 +94,7 @@
   }
   details[open] summary::before { content: "\25BE"; }
   pre {
-    margin: 10px 0 0; padding: 11px; height: 300px; overflow: auto;
+    margin: 10px 6px 0; padding: 11px; height: 200px; overflow: auto;
     background: #0f1116; border: 1px solid var(--line); border-radius: 6px;
     font-size: 11.5px; color: var(--ink-dim); white-space: pre-wrap;
     word-break: break-word; user-select: text; -webkit-user-select: text;
@@ -159,6 +159,7 @@
     // open the log once, the first time something breaks
     if (s.tone === "error" && !sawError) { sawError = true; $("logbox").open = true; }
     if (s.tone !== "error") sawError = false;
+    fit();
   }
 
   async function call(action) {
@@ -176,10 +177,20 @@
     paint(await window.pywebview.api.state());
   }
 
-  // the window is compact until the log is shown, then it grows to fit it
-  $("logbox").addEventListener("toggle", () => {
-    window.pywebview.api.set_log_open($("logbox").open);
-  });
+  // the page measures itself and the window follows, so opening the log or
+  // showing a hint never leaves a gap or a cut off line
+  let fitting = false;
+  function fit() {
+    if (fitting) return;
+    fitting = true;
+    requestAnimationFrame(() => {
+      fitting = false;
+      const delta = document.body.scrollHeight - window.innerHeight;
+      if (delta !== 0) window.pywebview.api.fit(delta);
+    });
+  }
+
+  $("logbox").addEventListener("toggle", fit);
 
   window.addEventListener("pywebviewready", () => {
     tick();

@@ -11,10 +11,10 @@ from server.config import HOST, load_port, save_port
 VERSION = "0.1.0"
 TITLE = "SpriteForge"
 WIDTH = 520
-HEIGHT_COMPACT = 410
-HEIGHT_WITH_LOG = 700
-# below this the plugin row and the status line start colliding
-MIN_SIZE = (430, 380)
+# measured against the real page: the collapsed layout needs exactly this
+HEIGHT_COMPACT = 380
+# the start size is also the floor, so the window only ever grows downward
+MIN_SIZE = (WIDTH, HEIGHT_COMPACT)
 POLL_SECONDS = 1.5
 OFFLINE = {"state": "offline", "progress": 0.0, "stage": None}
 NO_VENV = ("No .venv found in {root}. "
@@ -60,6 +60,7 @@ class Api:
         self.hint = ""
         self.hint_bad = False
         self.window = None
+        self.height = HEIGHT_COMPACT
         if server_proc.venv_python(self.root) is None:
             self._say(NO_VENV.format(root=self.root), bad=True)
         threading.Thread(target=self._poll, daemon=True).start()
@@ -84,11 +85,19 @@ class Api:
     def state(self) -> dict:
         return self._snapshot()
 
-    def set_log_open(self, is_open: bool) -> None:
-        # the log is the only tall part; the window grows only when it is shown
-        if self.window:
-            self.window.resize(WIDTH,
-                               HEIGHT_WITH_LOG if is_open else HEIGHT_COMPACT)
+    def fit(self, delta: int) -> None:
+        """Grow or shrink to the page's own height; delta comes from the page.
+
+        The page is the only one that knows how tall it is once the log is
+        open or a hint has appeared, so it measures and we follow. Width
+        never changes, and HEIGHT_COMPACT is the floor.
+        """
+        if not self.window or not delta:
+            return
+        target = max(HEIGHT_COMPACT, self.height + int(delta))
+        if target != self.height:
+            self.height = target
+            self.window.resize(WIDTH, target)
 
     def toggle_server(self) -> dict:
         if self.proc.is_alive():
@@ -182,6 +191,9 @@ def main() -> None:
                                    min_size=MIN_SIZE,
                                    background_color="#14161c")
     api.window = window
+    # a window the user dragged taller must not confuse the next fit
+    window.events.resized += lambda width, height: setattr(api, "height",
+                                                           height)
     if not webview2_present():
         window.load_html(
             "<body style='background:#14161c;color:#d3d7e0;"
