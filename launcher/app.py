@@ -15,9 +15,8 @@ from server.config import (HOST, VRAM_MODES, load_port, load_settings,
 VERSION = "0.1.0"
 TITLE = "SpriteForge"
 WIDTH = 520
-# during an install the log sits in a second column so the window widens
-# instead of growing tall
-WIDE_WIDTH = 880
+# ignore sub-pixel height jitter so DPI rounding never ping-pongs the window
+FIT_DEADBAND = 3
 # measured against the real page: the main screen collapsed needs exactly this
 HEIGHT_COMPACT = 380
 # a hard floor low enough that a short screen (setup) still fits snugly; the
@@ -110,23 +109,15 @@ class Api:
     def state(self) -> dict:
         return self._snapshot()
 
-    def relayout(self, delta: int, wide: bool) -> None:
-        """Set width and height in one resize so neither flashes on its own.
-
-        The page measures its own height (delta from the current inner height)
-        and says whether it wants the wide install view; both changes land in
-        a single resize so the window never shows a narrow-but-tall frame.
-        """
-        if not _window:
+    def fit(self, delta: int) -> None:
+        """Follow the page's own height; width is fixed, tiny jitter ignored."""
+        if not _window or abs(int(delta)) <= FIT_DEADBAND:
             return
-        want_w = WIDE_WIDTH if wide else WIDTH
         cap = int(_screen_height() * MAX_SCREEN_FRACTION)
-        target_h = min(max(MIN_HEIGHT, self.height + int(delta)), cap)
-        if want_w == self.width and target_h == self.height:
-            return
-        self.width = want_w
-        self.height = target_h
-        _window.resize(want_w, target_h)
+        target = min(max(MIN_HEIGHT, self.height + int(delta)), cap)
+        if target != self.height:
+            self.height = target
+            _window.resize(WIDTH, target)
 
     def toggle_server(self) -> dict:
         if self.proc.is_alive():
@@ -323,7 +314,7 @@ def main() -> None:
     api = Api()
     window = webview.create_window(TITLE, ui_file(), js_api=api,
                                    width=WIDTH, height=HEIGHT_COMPACT,
-                                   min_size=MIN_SIZE,
+                                   min_size=MIN_SIZE, resizable=False,
                                    background_color="#14161c")
     _window = window
     # a window the user dragged taller must not confuse the next fit
